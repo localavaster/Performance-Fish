@@ -97,7 +97,7 @@ public static class MiscExtensions
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static int SizeX(this Map map) => map.cellIndices.mapSizeX;
+	public static int SizeX(this Map map) => map.Size.x;
 
 	public static Map? TryGetMapHeld(this Thing thing)
 	{
@@ -134,10 +134,18 @@ public static class MiscExtensions
 
 	public static void InvokeWhenCellIndicesReady(this Map map, Action<Map> action)
 	{
+#if V1_6
+		if (map.cellIndices.NumGridCells > 0)
+#else
 		if (map.cellIndices != null)
+#endif
+		{
 			action(map);
+		}
 		else
+		{
 			map.Events().ComponentsConstructed += action;
+		}
 	}
 	
 	public static void AddLetterSilently(this LetterStack letterStack, Letter letter, Color color, bool playSound = false,

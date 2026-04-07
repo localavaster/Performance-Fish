@@ -43,14 +43,15 @@ public sealed class GenTypesPatches : ClassWithFishPrepatches
 
 		public static List<Type> ReplacementBody<TAttr>() where TAttr : Attribute
 		{
+			var attributeType = typeof(TAttr);
 			lock (Lock)
 			{
-				var typesWithAttribute = GenTypes.cachedTypesWithAttribute.TryGetValue(typeof(TAttr));
+				var typesWithAttribute = GenTypes.cachedTypesWithAttribute.TryGetValue(attributeType);
 
 				if (typesWithAttribute is null)
 				{
-					GenTypes.cachedTypesWithAttribute.Add(typeof(TAttr),
-						typesWithAttribute = GenTypes.AllTypes.AsParallel()
+					GenTypes.cachedTypesWithAttribute.Add(attributeType,
+						typesWithAttribute = GenTypes.AllTypes
 							.Where(Predicate<TAttr>()).ToList());
 				}
 			
@@ -82,22 +83,13 @@ public sealed class GenTypesPatches : ClassWithFishPrepatches
 
 				if (subclasses is null)
 				{
-					((PredicateClass)Predicate.Target).BaseType = baseType;
 					GenTypes.cachedSubclasses.Add(baseType,
-						subclasses = GenTypes.AllTypes.AsParallel()
-							.Where(Predicate).ToList());
+						subclasses = GenTypes.AllTypes
+							.Where(type => type.IsSubclassOf(baseType)).ToList());
 				}
 			
 				return subclasses;
 			}
-		}
-
-		public static Func<Type, bool> Predicate = new PredicateClass().Invoke;
-
-		public sealed class PredicateClass
-		{
-			public Type? BaseType;
-			public bool Invoke(Type type) => type.IsSubclassOf(BaseType!);
 		}
 	}
 
@@ -123,7 +115,7 @@ public sealed class GenTypesPatches : ClassWithFishPrepatches
 				if (subclassesNonAbstract is null)
 				{
 					GenTypes.cachedSubclassesNonAbstract.Add(baseType,
-						subclassesNonAbstract = baseType.AllSubclasses().AsParallel()
+						subclassesNonAbstract = baseType.AllSubclasses()
 							.Where(Predicate).ToList());
 				}
 			

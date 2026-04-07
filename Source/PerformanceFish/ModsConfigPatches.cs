@@ -17,7 +17,8 @@ public sealed class ModsConfigPatches : ClassWithFishPrepatches
 			= "Fixes a MayRequire bug causing it to normally not recognize steam versions of mods if another local "
 			+ "copy exists.";
 
-		public override MethodBase TargetMethodBase { get; } = methodof(ModsConfig.AreAllActive);
+		public override MethodBase TargetMethodBase { get; }
+			= AccessTools.DeclaredMethod(typeof(ModsConfig), nameof(ModsConfig.AreAllActive), [typeof(string)])!;
 
 		public override void Transpiler(ILProcessor ilProcessor, ModuleDefinition module)
 			=> IsActiveFix(ilProcessor, module);
@@ -29,7 +30,9 @@ public sealed class ModsConfigPatches : ClassWithFishPrepatches
 			= "Fixes a MayRequireAnyOf bug causing it to normally not recognize steam versions of mods if another "
 			+ "local copy exists, as well as its inability to strip whitespace.";
 
-		public override MethodBase TargetMethodBase { get; } = methodof(ModsConfig.IsAnyActiveOrEmpty);
+		public override MethodBase TargetMethodBase { get; }
+			= AccessTools.DeclaredMethod(typeof(ModsConfig), nameof(ModsConfig.IsAnyActiveOrEmpty),
+				[typeof(IEnumerable<string>), typeof(bool)])!;
 
 		public override void Transpiler(ILProcessor ilProcessor, ModuleDefinition module)
 			=> IsActiveFix(ilProcessor, module);

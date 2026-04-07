@@ -15,6 +15,9 @@ public sealed class WorldObjectsOptimization : ClassWithFishPrepatches
 {
 	public sealed class WorldObjectsHolderTickPatch : FishPrepatch
 	{
+		private static FishTable<Type, bool> _skippableCompTypes = null!;
+		private static FishTable<Type, bool> _skippableWorldObjectTypes = null!;
+
 		public override string? Description { get; }
 			= "The world objects holder is responsible for ticking every world object. This includes settlements, "
 			+ "caravans, outposts and any other object placed in the world, instead of maps. Normally it ticks "
@@ -35,7 +38,11 @@ public sealed class WorldObjectsOptimization : ClassWithFishPrepatches
 
 			var worldObjects = WorldObjectsHolder.tmpWorldObjects;
 			for (var i = worldObjects.Count; i-- > 0;)
+#if V1_6
+				worldObjects[i].DoTick();
+#else
 				worldObjects[i].Tick();
+#endif
 		}
 
 		public static void UpdateCache(WorldObjectsHolder instance)
@@ -50,7 +57,7 @@ public sealed class WorldObjectsOptimization : ClassWithFishPrepatches
 				var worldObject = instanceWorldObjects[i];
 
 				if (worldObject is not MapParent { HasMap: true }
-					&& SkippableWorldObjects.Contains(worldObject.GetType())
+					&& CanSkipWorldObjectTick(worldObject)
 					&& (worldObject is not Settlement settlement || settlement.trader?.stock is null) 
 					&& CanSkipCompTick(worldObject))
 				{
@@ -64,6 +71,15 @@ public sealed class WorldObjectsOptimization : ClassWithFishPrepatches
 			CachedMapsVersion = Current.gameInt.maps._version;
 		}
 
+		private static bool CanSkipWorldObjectTick(WorldObject worldObject)
+		{
+#if V1_6
+			if (worldObject is IThingHolder)
+				return false;
+#endif
+			return IsSkippableWorldObjectType(worldObject.GetType());
+		}
+
 		private static bool CanSkipCompTick(WorldObject worldObject)
 		{
 			var comps = worldObject.comps;
@@ -74,7 +90,7 @@ public sealed class WorldObjectsOptimization : ClassWithFishPrepatches
 				if (comp is EnterCooldownComp { Active: true })
 					return false;
 
-				if (!SkippableComps.Contains(comp.GetType()))
+				if (!IsSkippableCompType(comp.GetType()))
 					return false;
 				
 				comp.CompTick();
@@ -106,28 +122,69 @@ public sealed class WorldObjectsOptimization : ClassWithFishPrepatches
 		public static void AddCompToWhiteList(Type compType)
 		{
 			_whitelistedTickingCompTypes = _whitelistedTickingCompTypes.Add(compType);
-			SkippableComps = InitializeSkippableComps();
+			ResetSkippableCompTypes();
 		}
 
 		public static void AddWorldObjectToWhiteList(Type worldObjectType)
 		{
 			_whitelistedWorldObjectTypes = _whitelistedWorldObjectTypes.Add(worldObjectType);
-			SkippableWorldObjects = InitializeSkippableWorldObjects();
+			ResetSkippableWorldObjectTypes();
 		}
 
-		public static HashSet<Type>
-			SkippableComps = InitializeSkippableComps(),
-			SkippableWorldObjects = InitializeSkippableWorldObjects();
+		private static void ResetSkippableCompTypes()
+		{
+			_skippableCompTypes = new()
+			{
+				ValueInitializer = static type => ComputeIsSkippableCompType(type)
+			};
+		}
 
-		private static HashSet<Type> InitializeSkippableComps()
-			=> MakeSubclassHashSet(typeof(WorldObjectComp), nameof(WorldObjectComp.CompTick),
-				_whitelistedTickingCompTypes);
+		private static void ResetSkippableWorldObjectTypes()
+		{
+			_skippableWorldObjectTypes = new()
+			{
+				ValueInitializer = static type => ComputeIsSkippableWorldObjectType(type)
+			};
+		}
 
-		private static HashSet<Type> InitializeSkippableWorldObjects()
-			=> MakeSubclassHashSet(typeof(WorldObject), nameof(WorldObject.Tick), _whitelistedWorldObjectTypes);
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static bool IsSkippableCompType(Type type) => _skippableCompTypes.GetOrAdd(type);
 
-		private static HashSet<Type> MakeSubclassHashSet(Type type, string name, Type?[] allowedDeclaringTypes)
-			=> type.SubclassesWithNoMethodOverrideAndSelf(allowedDeclaringTypes, name).ToHashSet();
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static bool IsSkippableWorldObjectType(Type type) => _skippableWorldObjectTypes.GetOrAdd(type);
+
+		private static bool ComputeIsSkippableCompType(Type type)
+		{
+			if (AccessTools.Method(type, nameof(WorldObjectComp.CompTick))?.DeclaringType is not { } declaringType
+				|| !_whitelistedTickingCompTypes.Contains(declaringType))
+			{
+				return false;
+			}
+
+#if V1_6
+			return AccessTools.Method(type, nameof(WorldObjectComp.CompTickInterval), [typeof(int)])?.DeclaringType
+				is { } intervalDeclaringType
+				&& _whitelistedTickingCompTypes.Contains(intervalDeclaringType);
+#else
+			return true;
+#endif
+		}
+
+		private static bool ComputeIsSkippableWorldObjectType(Type type)
+		{
+			if (AccessTools.Method(type, "Tick")?.DeclaringType is not { } declaringType
+				|| !_whitelistedWorldObjectTypes.Contains(declaringType))
+			{
+				return false;
+			}
+
+#if V1_6
+			return AccessTools.Method(type, "TickInterval", [typeof(int)])?.DeclaringType is { } intervalDeclaringType
+				&& _whitelistedWorldObjectTypes.Contains(intervalDeclaringType);
+#else
+			return true;
+#endif
+		}
 
 		public static bool CacheDirty(WorldObjectsHolder instance)
 			=> CachedWorldObjectsVersion != instance.worldObjects._version
@@ -135,7 +192,12 @@ public sealed class WorldObjectsOptimization : ClassWithFishPrepatches
 
 		public static void SetDirty() => CachedWorldObjectsVersion = CachedMapsVersion = -2;
 
-		static WorldObjectsHolderTickPatch() => Cache.Utility.Cleared += SetDirty;
+		static WorldObjectsHolderTickPatch()
+		{
+			ResetSkippableCompTypes();
+			ResetSkippableWorldObjectTypes();
+			Cache.Utility.Cleared += SetDirty;
+		}
 	}
 
 	public sealed class ExpandingIconCaching : FishPrepatch

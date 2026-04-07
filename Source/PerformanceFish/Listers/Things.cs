@@ -568,9 +568,25 @@ public sealed class Things : ClassWithFishPatches
 		
 		public static unsafe IndexedFishSet<T> InitializeThingsList<T>() where T : Thing
 #pragma warning disable CS8622
-			=> new(static () => new(0, keyHashCodeByRefGetter: &GetKeyByRef, keyHashCodeGetter: &ThingHelper.GetKey));
+			=> new(static () => new(0,
+				keyHashCodeByRefGetter: &GetKeyByRef,
+				keyHashCodeGetter: &ThingHelper.GetKey,
+				keyEqualityByRefComparer: &EqualsByKeyByRef,
+				keyEqualityComparer: &EqualsByKey));
 #pragma warning restore CS8622
 
 		private static int GetKeyByRef<T>(ref T thing) where T : Thing => thing.GetKey();
+
+		private static bool EqualsByKey<T>(T? left, T? right) where T : Thing
+			=> ReferenceEquals(left, right)
+				|| left is not null
+				&& right is not null
+				&& left.GetKey() == right.GetKey();
+
+		private static bool EqualsByKeyByRef<T>(ref T? left, ref T? right) where T : Thing
+			=> ReferenceEquals(left, right)
+				|| left is not null
+				&& right is not null
+				&& left.GetKey() == right.GetKey();
 	}
 }

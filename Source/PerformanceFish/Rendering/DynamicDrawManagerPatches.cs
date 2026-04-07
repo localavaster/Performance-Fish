@@ -68,39 +68,78 @@ public sealed class DynamicDrawManagerPatches : ClassWithFishPrepatches
 		public static void CullAndInitializeThings(DynamicDrawManager instance)
 		{
 			var map = instance.map;
-			var mapSizeX = map.SizeX();
+			var cellIndices = map.cellIndices;
+			var mapSizeX = GetMapSizeX(cellIndices);
 			var fogGrid = map.fogGrid.fogGrid;
 			var snowGrid = map.snowGrid.depthGrid;
 			var checkShadows = MatBases.SunShadow.shader.isSupported;
-			var currentViewRect = Find.CameraDriver.CurrentViewRect.ClipInsideMap(map).ExpandedBy(1);
+			var currentViewRect = Find.CameraDriver.CurrentViewRect.ExpandedBy(1);
+#if V1_6
+			if (WorldComponent_GravshipController.GravshipRenderInProgess)
+				currentViewRect = currentViewRect.Encapsulate(WorldComponent_GravshipController.GravshipRenderBounds);
+#endif
+			currentViewRect = currentViewRect.ClipInsideMap(map);
 			var shadowViewRect = SectionLayer_SunShadows.GetSunShadowsViewRect(map, currentViewRect);
 			instance.drawThings.UnwrapArray(out var drawThings, out var drawThingsCount);
 			
 			for (var i = 0; i < drawThingsCount; i++)
 			{
 				var drawThing = drawThings.UnsafeLoad(i);
-				var position = drawThing.Position;
+				var position = GetCullPosition(drawThing);
 				var drawThingDef = drawThing.def;
 				var cellIndex = position.CellToIndex(mapSizeX);
-				if ((!fogGrid[cellIndex] || drawThingDef.seeThroughFog)
-					&& (drawThingDef.hideAtSnowDepth >= 1f
-						|| drawThingDef.hideAtSnowDepth >= snowGrid[cellIndex]))
+				if (!CellIndicesContain(cellIndices, cellIndex)
+					|| (!drawThingDef.seeThroughFog
+#if V1_6
+						&& fogGrid.IsSet(cellIndex))
+#else
+						&& fogGrid[cellIndex])
+#endif
+#if V1_6
+					|| (drawThingDef.hideAtSnowOrSandDepth < 1f
+						&& snowGrid[cellIndex] > drawThingDef.hideAtSnowOrSandDepth))
+#else
+					|| (drawThingDef.hideAtSnowDepth < 1f
+						&& snowGrid[cellIndex] > drawThingDef.hideAtSnowDepth))
+#endif
 				{
-					if (currentViewRect.Contains(position)
-						|| currentViewRect.Overlaps(drawThing.OccupiedDrawRect()))
-					{
-						ThingsToDraw.Add(drawThing);
-						
-						if (!DebugViewSettings.singleThreadedDrawing)
-							EnsureInitialized(drawThing);
-					}
-					else if (drawThing is Pawn pawn && checkShadows && shadowViewRect.Contains(drawThing.Position))
-					{
-						PawnShadowsToDraw.Add(pawn);
-					}
+					continue;
+				}
+
+				if (currentViewRect.Contains(position)
+					|| currentViewRect.Overlaps(drawThing.OccupiedDrawRect()))
+				{
+					ThingsToDraw.Add(drawThing);
+					
+					if (!DebugViewSettings.singleThreadedDrawing)
+						EnsureInitialized(drawThing);
+				}
+				else if (drawThing is Pawn pawn && checkShadows && shadowViewRect.Contains(position))
+				{
+					PawnShadowsToDraw.Add(pawn);
 				}
 			}
 		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static IntVec3 GetCullPosition(Thing drawThing)
+			=> drawThing is Pawn ? drawThing.DrawPos.ToIntVec3() : drawThing.Position;
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static bool CellIndicesContain(CellIndices cellIndices, int index)
+#if V1_6
+			=> cellIndices.Contains(index);
+#else
+			=> (uint)index < (uint)(cellIndices.mapSizeX * cellIndices.mapSizeZ);
+#endif
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static int GetMapSizeX(CellIndices cellIndices)
+#if V1_6
+			=> cellIndices.SizeX;
+#else
+			=> cellIndices.mapSizeX;
+#endif
 
 		public static void EnsureInitialized(Thing drawThing)
 		{

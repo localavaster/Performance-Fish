@@ -9,6 +9,7 @@ using PerformanceFish.Hauling;
 using PerformanceFish.Planet;
 using Prepatcher;
 using RimWorld.Planet;
+using PFMapEvents = PerformanceFish.Events.MapEvents;
 
 namespace PerformanceFish;
 
@@ -22,7 +23,7 @@ public static class PrepatcherFields
 	[PrepatcherField]
 	[ValueInitializer(nameof(CreateMapEvents))]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static extern MapEvents.Instanced Events(this Map map);
+	public static extern PFMapEvents.Instanced Events(this Map map);
 
 	[PrepatcherField]
 	[ValueInitializer(nameof(CreateThingEvents))]
@@ -175,7 +176,7 @@ public static class PrepatcherFields
 	public static FishTable<GroupThingPair, int> CreateIndexMapByGroup() => new();
 	public static Cache.CellGrid<int> CreateItemCountGrid(Map map) => new(map);
 	public static Cache.BitCellGrid CreateBitCellGrid(Map map) => new(map);
-	public static MapEvents.Instanced CreateMapEvents() => new();
+	public static PFMapEvents.Instanced CreateMapEvents() => new();
 	public static ThingEvents.Instanced CreateThingEvents() => new();
 	public static StorageSettingsPatches.StorageSettingsCache CreateStorageSettingsCache() => new();
 	public static StorageDistrict[] GetDefaultDistrictArray() => StorageDistrict.GetDefaultArray();

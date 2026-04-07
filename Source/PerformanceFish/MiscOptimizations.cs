@@ -114,17 +114,30 @@ public sealed class MiscOptimizations : ClassWithFishPatches
 			= "Throttles rotting on misconfigured defs to only recalculate every 256 ticks, instead of constantly.";
 
 		public override MethodBase TargetMethodInfo { get; }
+#if V1_6
+			= AccessTools.DeclaredMethod(typeof(RimWorld.CompRottable), nameof(RimWorld.CompRottable.CompTickInterval),
+				[typeof(int)])!;
+#else
 			= AccessTools.Method(typeof(RimWorld.CompRottable), nameof(RimWorld.CompRottable.CompTick));
+#endif
 
 		public static CodeInstructions Transpiler(CodeInstructions codes, ILGenerator generator)
 			=> Reflection.GetCodeInstructions(Replacement, generator);
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+#if V1_6
+		public static void Replacement(RimWorld.CompRottable instance, int delta)
+		{
+			if ((TickHelper.TicksGame & 255) == (instance.parent.thingIDNumber & 255))
+				instance.TickInterval(256);
+		}
+#else
 		public static void Replacement(RimWorld.CompRottable instance)
 		{
 			if ((TickHelper.TicksGame & 255) == (instance.parent.thingIDNumber & 255))
 				instance.Tick(256);
 		}
+#endif
 	}
 
 	public sealed class RitualObligationTrigger_Date : FirstPriorityFishPatch

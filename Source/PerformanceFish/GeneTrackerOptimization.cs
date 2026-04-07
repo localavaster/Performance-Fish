@@ -14,6 +14,16 @@ public sealed class GeneTrackerOptimization : ClassWithFishPrepatches
 {
 	public sealed class GeneTrackerTickPatch : FishPrepatch
 	{
+		private static readonly FishTable<Type, bool> _skippableTypes;
+
+		static GeneTrackerTickPatch()
+		{
+			_skippableTypes = new()
+			{
+				ValueInitializer = static type => ComputeIsSkippableType(type)
+			};
+		}
+
 		public override string? Description { get; }
 			= "Every pawn has a gene tracker, which is responsible for ticking each of their genes. Normally it ticks "
 			+ "all of them equally, including those don't change or affect anything through ticking, like skin colors "
@@ -74,7 +84,7 @@ public sealed class GeneTrackerOptimization : ClassWithFishPrepatches
 			for (var i = 0; i < count; i++)
 			{
 				var gene = genes[i];
-				if (SkippableTypes.Contains(gene.GetType())
+				if (IsSkippableType(gene.GetType())
 					&& (gene.def.mentalBreakMtbDays <= 0f || gene.def.mentalBreakDef == null))
 				{
 					continue;
@@ -83,8 +93,15 @@ public sealed class GeneTrackerOptimization : ClassWithFishPrepatches
 				genesToTick.Add(gene);
 			}
 		}
-		
-		public static HashSet<Type> SkippableTypes
-			= typeof(Gene).SubclassesWithNoMethodOverrideAndSelf(nameof(Gene.Tick)).ToHashSet();
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static bool IsSkippableType(Type type) => _skippableTypes.GetOrAdd(type);
+
+		private static bool ComputeIsSkippableType(Type type)
+			=> type == typeof(Gene)
+				|| type.GetMethod(nameof(Gene.Tick), global::System.Reflection.BindingFlags.Instance
+					| global::System.Reflection.BindingFlags.Public
+					| global::System.Reflection.BindingFlags.NonPublic
+					| global::System.Reflection.BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null) == null;
 	}
 }

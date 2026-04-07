@@ -41,7 +41,8 @@ public sealed class GasGridOptimization : ClassWithFishPrepatches
 			= "Required by the gas grid optimization";
 
 		public override MethodBase TargetMethodBase { get; }
-			= AccessTools.DeclaredMethod(typeof(GasGrid), nameof(GasGrid.SetDirect));
+			= AccessTools.DeclaredMethod(typeof(GasGrid), nameof(GasGrid.SetDirect),
+				[typeof(int), typeof(byte), typeof(byte), typeof(byte), typeof(byte)])!;
 
 		public override void Transpiler(ILProcessor ilProcessor, ModuleDefinition module)
 			=> ilProcessor.ReplaceBodyWith(ReplacementBody);
@@ -415,7 +416,7 @@ public sealed class GasGridOptimization : ClassWithFishPrepatches
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static int GetMapSizeX(Map map) => map.cellIndices.mapSizeX;
+		public static int GetMapSizeX(Map map) => map.Size.x;
 	}
 
 	public sealed class ExposeDataPatch : FishPrepatch
@@ -1075,7 +1076,7 @@ public sealed class GasGridOptimization : ClassWithFishPrepatches
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		private IntVec3 IndexToCell(int index)
-			=> CellIndicesUtility.IndexToCell(index, Map.cellIndices.mapSizeX);
+			=> CellIndicesUtility.IndexToCell(index, Map.Size.x);
 
 		/// <summary>
 		/// For modders. Performance Fish doesn't automatically scribe added custom defs.

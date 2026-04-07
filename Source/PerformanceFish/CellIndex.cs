@@ -10,18 +10,23 @@ public record struct CellIndex(int Value)
 	public int Value = Value;
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public CellIndex(IntVec3 cell, Map map) : this(cell, map.cellIndices.mapSizeX) {}
+	public CellIndex(IntVec3 cell, Map map) : this(cell, map.Size.x) {}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public CellIndex(IntVec3 cell, int mapSizeX) : this(cell.CellToIndex(mapSizeX)) {}
 
-	public IntVec3 ToCell(Map map) => ToCell(map.cellIndices.mapSizeX);
+	public IntVec3 ToCell(Map map) => ToCell(map.Size.x);
 	
 	public IntVec3 ToCell(int mapSizeX) => CellIndicesUtility.IndexToCell(Value, mapSizeX);
 
 	public List<Thing> GetThingList(Map map) => map.thingGrid.thingGrid[Value];
 
-	public bool IsFogged(Map map) => map.fogGrid.fogGrid[Value];
+	public bool IsFogged(Map map)
+#if V1_6
+		=> map.fogGrid.fogGrid.IsSet(Value);
+#else
+		=> map.fogGrid.fogGrid[Value];
+#endif
 
 	public float GetSnowDepth(Map map) => map.snowGrid.depthGrid[Value];
 

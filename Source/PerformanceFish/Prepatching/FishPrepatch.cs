@@ -4,6 +4,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 using System.Diagnostics;
+using System.Linq;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Cecil.Rocks;
@@ -192,14 +193,26 @@ public abstract class FishPrepatch : FishPrepatchBase
 		var stateParameter = postfixParameters.TryGetNamed("__state");
 		// Verify? It would make sense to match against prefix state
 
-		// var skipOriginalFlag = ilProcessor.DeclareLocal(typeof(bool));
-		var resultVariable = GetResultVariable(ilProcessor, ref patchVariables, resultParameter, targetMethod);
+		var hasReturnValue = targetMethod.ReturnType.FullName != module.TypeSystem.Void.FullName;
+		var resultVariable = hasReturnValue
+			? patchVariables.Result ??= ilProcessor.DeclareLocal(targetMethod.ReturnType)
+			: GetResultVariable(ilProcessor, ref patchVariables, resultParameter, targetMethod);
 		var stateVariable = GetStateVariable(ilProcessor, ref patchVariables, stateParameter);
+		var retInstructions = instructions.Where(static instruction => instruction.OpCode == OpCodes.Ret).ToArray();
+		if (retInstructions.Length == 0)
+			return;
 
 		var postfixInstructions = new Collection<object>();
 		
-		if (resultVariable != null)
-			postfixInstructions.Add((OpCodes.Stloc, resultVariable));
+		if (hasReturnValue)
+		{
+			postfixInstructions.Add((OpCodes.Stloc, resultVariable!));
+			postfixInstructions.Add(OpCodes.Nop);
+		}
+		else
+		{
+			postfixInstructions.Add(OpCodes.Nop);
+		}
 
 		foreach (var parameter in postfixParameters)
 		{
@@ -217,34 +230,85 @@ public abstract class FishPrepatch : FishPrepatchBase
 			postfixInstructions.Add((OpCodes.Call, postfixMethodInfo));
 		}
 
-		if (postfixMethodInfo.ReturnType == typeof(void) && resultVariable != null)
-			postfixInstructions.Add((OpCodes.Ldloc, resultVariable));
+		if (postfixMethodInfo.ReturnType != typeof(void))
+			postfixInstructions.Add((OpCodes.Stloc, resultVariable!));
 		
-		Span<int> retInstructions = stackalloc int[instructions.Count];
-		var retInstructionCount = 0;
-		
-		for (var i = 0; i < instructions.Count; i++)
-		{
-			if (instructions[i].OpCode == OpCodes.Ret)
-				retInstructions[retInstructionCount++] = i;
-		}
+		if (hasReturnValue)
+			postfixInstructions.Add((OpCodes.Ldloc, resultVariable!));
 
-		var lastRetInstructionIndex = retInstructions[retInstructionCount - 1];
+		var lastRetInstruction = retInstructions[^1];
+		var lastRetInstructionIndex = instructions.IndexOf(lastRetInstruction);
 		ilProcessor.InsertRange(lastRetInstructionIndex, postfixInstructions);
+		var captureStart = instructions[lastRetInstructionIndex];
+		var postfixStart = instructions[lastRetInstructionIndex + (hasReturnValue ? 1 : 0)];
 
-		for (var i = 0; i < instructions.Count; i++)
+		RetargetExceptionHandlerEnds(targetMethod.Body, lastRetInstruction, captureStart);
+		var retInstructionSet = retInstructions.ToHashSet();
+		foreach (var instruction in instructions)
 		{
-			var instruction = instructions[i];
-			if (instruction.Operand is Instruction branchTarget && branchTarget.OpCode == OpCodes.Ret)
-				instruction.Operand = instructions[lastRetInstructionIndex];
+			if (instruction.Operand is Instruction branchTarget && retInstructionSet.Contains(branchTarget))
+				instruction.Operand = captureStart;
 		}
 
-		for (var i = 0; i < retInstructionCount - 1; i++)
+		for (var i = 0; i < retInstructions.Length - 1; i++)
 		{
-			var instruction = instructions[retInstructions[i]];
-			instruction.OpCode = OpCodes.Br;
-			instruction.Operand = instructions[lastRetInstructionIndex];
+			var instruction = retInstructions[i];
+			if (hasReturnValue)
+				ilProcessor.InsertBefore(instruction, Instruction.Create(OpCodes.Stloc, resultVariable!));
+
+			instruction.OpCode = IsInProtectedRegion(targetMethod.Body, instruction) ? OpCodes.Leave : OpCodes.Br;
+			instruction.Operand = postfixStart;
 		}
+	}
+
+	private static void RetargetExceptionHandlerEnds(Mono.Cecil.Cil.MethodBody methodBody, Instruction oldBoundary,
+		Instruction newBoundary)
+	{
+		foreach (var exceptionHandler in methodBody.ExceptionHandlers)
+		{
+			if (exceptionHandler.TryEnd == oldBoundary)
+				exceptionHandler.TryEnd = newBoundary;
+			if (exceptionHandler.HandlerEnd == oldBoundary)
+				exceptionHandler.HandlerEnd = newBoundary;
+		}
+	}
+
+	private static bool IsInProtectedRegion(Mono.Cecil.Cil.MethodBody methodBody, Instruction instruction)
+	{
+		var instructions = methodBody.Instructions;
+		var instructionIndex = instructions.IndexOf(instruction);
+		
+		foreach (var exceptionHandler in methodBody.ExceptionHandlers)
+		{
+			if (IsWithinRange(instructions, instructionIndex, exceptionHandler.TryStart, exceptionHandler.TryEnd)
+				|| IsWithinRange(instructions, instructionIndex, exceptionHandler.HandlerStart,
+					exceptionHandler.HandlerEnd)
+				|| exceptionHandler.FilterStart != null
+				&& IsWithinRange(instructions, instructionIndex, exceptionHandler.FilterStart,
+					exceptionHandler.HandlerStart))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private static bool IsWithinRange(Mono.Collections.Generic.Collection<Instruction> instructions,
+		int instructionIndex, Instruction? rangeStart, Instruction? rangeEnd)
+	{
+		if (rangeStart == null)
+			return false;
+
+		var rangeStartIndex = instructions.IndexOf(rangeStart);
+		if (rangeStartIndex < 0 || instructionIndex < rangeStartIndex)
+			return false;
+
+		if (rangeEnd == null)
+			return true;
+
+		var rangeEndIndex = instructions.IndexOf(rangeEnd);
+		return rangeEndIndex < 0 || instructionIndex < rangeEndIndex;
 	}
 
 	private static VariableDefinition? GetStateVariable(ILProcessor ilProcessor, ref PatchVariables patchVariables,

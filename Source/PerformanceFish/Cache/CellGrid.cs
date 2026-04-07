@@ -9,38 +9,60 @@ namespace PerformanceFish.Cache;
 
 public sealed class CellGrid<T>
 {
+	private readonly Map _map;
 	private T[] _innerArray;
 	private CellIndices _cellIndices;
 
 	public CellGrid(Map map)
 	{
-		_innerArray = null!;
-		_cellIndices = null!;
+		_map = map;
+		_innerArray = Array.Empty<T>();
+		_cellIndices = default;
 		map.InvokeWhenCellIndicesReady(Initialize);
 	}
 
-	[MemberNotNull(nameof(_innerArray), nameof(_cellIndices))]
+	[MemberNotNull(nameof(_innerArray))]
 	private void Initialize(Map map)
 	{
 		_cellIndices = map.cellIndices;
 		_innerArray = new T[_cellIndices.NumGridCells];
 	}
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private void EnsureInitialized()
+	{
+		if (_cellIndices.NumGridCells != _map.cellIndices.NumGridCells)
+			Initialize(_map);
+	}
+
 	public ref T this[int index]
 	{
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		get => ref _innerArray[index];
+		get
+		{
+			EnsureInitialized();
+			return ref _innerArray[index];
+		}
 	}
 
 	public ref T this[in IntVec3 c]
 	{
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		get => ref _innerArray[c.CellToIndex(_cellIndices)];
+		get
+		{
+			EnsureInitialized();
+			var index = c.CellToIndex(_cellIndices);
+			return ref _innerArray[index];
+		}
 	}
 
 	public ref T this[CellIndex cellIndex]
 	{
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		get => ref _innerArray[cellIndex.Value];
+		get
+		{
+			EnsureInitialized();
+			return ref _innerArray[cellIndex.Value];
+		}
 	}
 }

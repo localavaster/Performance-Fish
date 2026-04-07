@@ -237,6 +237,11 @@ public sealed class Buildings : ClassWithFishPrepatches
 			if (def.building is { isNaturalRock: true })
 				return;
 
+			UpdateCacheOnAdd(__instance, b, def);
+		}
+
+		private static void UpdateCacheOnAdd(ListerBuildings __instance, Building b, ThingDef def)
+		{
 			var cache = __instance.Cache();
 			
 			if (b.Faction == Faction.OfPlayer)
@@ -290,6 +295,11 @@ public sealed class Buildings : ClassWithFishPrepatches
 			if (def.building is { isNaturalRock: true })
 				return;
 
+			UpdateCacheOnRemove(__instance, b, def);
+		}
+
+		private static void UpdateCacheOnRemove(ListerBuildings __instance, Building b, ThingDef def)
+		{
 			var cache = __instance.Cache();
 			
 			if (b.Faction == Faction.OfPlayer)

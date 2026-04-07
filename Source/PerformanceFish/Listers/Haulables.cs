@@ -183,22 +183,22 @@ public sealed class Haulables : ClassWithFishPrepatches
 		public readonly HashSet<Thing> ThingsQueuedToRemove = [];
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public void CheckUpdate(List<Thing> haulables)
+		public void CheckUpdate(ICollection<Thing> haulables)
 		{
 			if (IsDirty(haulables))
 				Update(haulables);
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public bool IsDirty(List<Thing> haulables) => haulables.Count != ContainedThings.Count;
+		public bool IsDirty(ICollection<Thing> haulables) => haulables.Count != ContainedThings.Count;
 
 		[MethodImpl(MethodImplOptions.NoInlining)]
-		public void Update(List<Thing> haulables)
+		public void Update(ICollection<Thing> haulables)
 		{
 			ContainedThings.Clear();
 			
-			for (var i = haulables.Count; i-- > 0;)
-				ContainedThings.Add(haulables[i].GetKey());
+			foreach (var haulable in haulables)
+				ContainedThings.Add(haulable.GetKey());
 		}
 	}
 }

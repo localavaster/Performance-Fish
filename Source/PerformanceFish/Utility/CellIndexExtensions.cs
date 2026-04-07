@@ -12,7 +12,7 @@ public static class CellIndexExtensions
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static int CellToIndex(this in IntVec3 cell, CellIndices cellIndices)
-		=> cell.CellToIndex(cellIndices.mapSizeX);
+		=> cell.CellToIndex(GetMapSizeX(cellIndices));
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static int CellToIndex(this in IntVec3 cell, int mapSizeX) => (cell.z * mapSizeX) + cell.x;
@@ -22,7 +22,7 @@ public static class CellIndexExtensions
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static int CellToIndex(this IntVec2 cell, CellIndices cellIndices)
-		=> cell.CellToIndex(cellIndices.mapSizeX);
+		=> cell.CellToIndex(GetMapSizeX(cellIndices));
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static int CellToIndex(this IntVec2 cell, int mapSizeX) => (cell.z * mapSizeX) + cell.x;
@@ -31,7 +31,7 @@ public static class CellIndexExtensions
 	public static int CellToIndex(int x, int z, Map map) => CellToIndex(x, z, map.cellIndices);
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static int CellToIndex(int x, int z, CellIndices cellIndices) => CellToIndex(x, z, cellIndices.mapSizeX);
+	public static int CellToIndex(int x, int z, CellIndices cellIndices) => CellToIndex(x, z, GetMapSizeX(cellIndices));
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static int CellToIndex(int x, int z, int mapSizeX) => (z * mapSizeX) + x;
@@ -41,11 +41,24 @@ public static class CellIndexExtensions
 		=> thingGrid.thingGrid[cellIndex.Value];
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static bool IsFogged(this FogGrid fogGrid, CellIndex cellIndex) => fogGrid.fogGrid[cellIndex.Value];
+	public static bool IsFogged(this FogGrid fogGrid, CellIndex cellIndex)
+#if V1_6
+		=> fogGrid.fogGrid.IsSet(cellIndex.Value);
+#else
+		=> fogGrid.fogGrid[cellIndex.Value];
+#endif
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static float GetDepth(this SnowGrid snowGrid, CellIndex cellIndex) => snowGrid.depthGrid[cellIndex.Value];
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static float GetDepth(this SnowGrid snowGrid, int cellIndex) => snowGrid.depthGrid[cellIndex];
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static int GetMapSizeX(CellIndices cellIndices)
+#if V1_6
+		=> cellIndices.SizeX;
+#else
+		=> cellIndices.mapSizeX;
+#endif
 }

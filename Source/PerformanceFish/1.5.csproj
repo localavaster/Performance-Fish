@@ -3,6 +3,8 @@
 	<PropertyGroup>
 		<OutDir>..\..\1.5\Assemblies\</OutDir>
 		<Copyright>Copyright (c) 2024 Bradson</Copyright>
+		<FisheryRepoRoot Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\Fishery\1.5\Assemblies\1Fishery.dll')">$(MSBuildThisFileDirectory)..\..\..\Fishery</FisheryRepoRoot>
+		<FisheryRepoRoot Condition="'$(FisheryRepoRoot)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\..\Fishery-clean\1.5\Assemblies\1Fishery.dll')">$(MSBuildThisFileDirectory)..\..\..\Fishery-clean</FisheryRepoRoot>
 	</PropertyGroup>
 	<PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
 		<DefineConstants>DEBUG;V1_5</DefineConstants>
@@ -14,7 +16,7 @@
 		<PackageReference Include="Krafs.Rimworld.Ref" Version="1.5.*" />
 		<PackageReference Include="Lib.Harmony" Version="2.3.3" ExcludeAssets="runtime" />
 		<Reference Include="1Fishery">
-			<HintPath>..\..\..\Fishery\1.5\Assemblies\1Fishery.dll</HintPath>
+			<HintPath>$(FisheryRepoRoot)\1.5\Assemblies\1Fishery.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
 	</ItemGroup>

@@ -21,13 +21,25 @@ public sealed class ThingDefPatches : ClassWithFishPrepatches
 	public sealed class GetHashCodePatch : FishClassPrepatch
 	{
 		public override string? Description { get; }
+#if V1_6
+			= "Disabled on 1.6 because Verse.Def now already caches defNameHash and overrides GetHashCode itself.";
+#else
 			= "Def.GetHashCode is overridden to return defName.GetHashCode, which is rather slow as that's a string. "
 			+ "This patch caches the hashcode in a field added through prepatcher and simply returns that instead.";
+#endif
 
-		public override Type Type { get; } = typeof(BuildableDef);
+		public override Type Type { get; } =
+#if V1_6
+			typeof(Def);
+#else
+			typeof(BuildableDef);
+#endif
 
 		public override void FreePatch(TypeDefinition typeDefinition)
 		{
+#if V1_6
+			return;
+#else
 			var module = typeDefinition.Module;
 
 			var fishHashField = new FieldDefinition(FISH_HASH_FIELD_NAME, FieldAttributes.Private,
@@ -74,6 +86,7 @@ public sealed class ThingDefPatches : ClassWithFishPrepatches
 			getHashCodeBody.MaxStackSize = 2;
 			getHashCodeBody.Method.ImplAttributes |= MethodImplAttributes.AggressiveInlining;
 			getHashCodeBody.OptimizeMacros();
+#endif
 		}
 
 		// [MethodImpl(MethodImplOptions.AggressiveInlining)]

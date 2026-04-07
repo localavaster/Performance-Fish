@@ -50,7 +50,9 @@ public static class OnAssembliesLoaded
 			try
 			{
 				if (!patchClass.RequiresLoadedGameForPatching)
+				{
 					patchClass.Patches.PatchAll();
+				}
 			}
 			catch (Exception ex)
 			{

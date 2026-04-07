@@ -349,8 +349,7 @@ public sealed class RoomOptimizations : ClassWithFishPatches, IHasDescription
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public static Room? RoomAt(IntVec3 c, Map map, RegionType allowedRegionTypes = RegionType.Set_All)
 		{
-			var cellIndices = map.cellIndices;
-			if (((uint)c.x >= (uint)cellIndices.mapSizeX) | ((uint)c.z >= (uint)cellIndices.mapSizeZ))
+			if (!c.InBounds(map))
 				return null;
 
 			var regionAndRoomUpdater = map.regionAndRoomUpdater;
@@ -360,8 +359,8 @@ public sealed class RoomOptimizations : ClassWithFishPatches, IHasDescription
 			else if (regionAndRoomUpdater.AnythingToRebuild)
 				LogIncorrectResultWarning(c);
 
-			var region = map.regionGrid.regionGrid[(c.z * cellIndices.mapSizeX) + c.x];
-			return region is null || !region.valid || (region.type & allowedRegionTypes) == 0
+			var region = map.regionGrid.GetValidRegionAt_NoRebuild(c);
+			return region is null || (region.type & allowedRegionTypes) == 0
 				? null
 				: region.District?.Room;
 		}

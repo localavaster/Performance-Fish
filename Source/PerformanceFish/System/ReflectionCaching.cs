@@ -510,44 +510,139 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			public static bool Prefix(ICustomAttributeProvider obj, Type attributeType, bool inherit,
 				out object[]? __result, out CustomAttributeState __state)
 			{
-				var key = new CustomAttributeCache(obj, (__state.AttributeType = attributeType).TypeHandle,
-					__state.Inherit = inherit);
+				var key = new CustomAttributeCache(obj, attributeType.TypeHandle, inherit);
+				__state = new() { Key = key };
 
-				ref var cache = ref CustomAttributeCache.GetOrAddReference(in key);
-				if (cache.Attributes is null)
-					TryGetFromCentralCache(ref key, ref cache);
+				if (TryGetCachedAttributes(ref key, out __result))
+					return false;
 
-				return __state.State = (__result = cache.Attributes) is null;
+				MarkInProgress(ref key);
+				__state.ShouldStore = true;
+				__result = null;
+				return true;
 			}
 
 			[MethodImpl(MethodImplOptions.NoInlining)]
-			private static void TryGetFromCentralCache(ref CustomAttributeCache key,
-				ref CustomAttributeCacheValue cache)
+			private static bool TryGetCachedAttributes(ref CustomAttributeCache key, out object[]? result)
 			{
 				lock (_lock)
-					cache.Attributes = CustomAttributeCache.GetDirectly.GetOrAdd(ref key).Attributes;
+				{
+					if (TryUseCache(CustomAttributeCache.Get, ref key, out result))
+						return true;
+
+					if (TryUseCache(CustomAttributeCache.GetDirectly, ref key, out var centralResult))
+					{
+						result = centralResult;
+						CustomAttributeCache.Get[key] = new()
+						{
+							Attributes = centralResult,
+							Status = CustomAttributeCacheStatus.Completed
+						};
+						return true;
+					}
+				}
+
+				result = null;
+				return false;
 			}
 
 			[MethodImpl(MethodImplOptions.AggressiveInlining)]
 			public static void Postfix(ICustomAttributeProvider obj, object[]? __result,
 				in CustomAttributeState __state)
 			{
-				if (!__state.State || __result is null)
+				if (!__state.ShouldStore || __result is null)
 					return;
 
-				UpdateCache(obj, __state, __result);
+				StoreCompleted(ref Unsafe.AsRef(in __state.Key), __result);
 			}
 
 			[MethodImpl(MethodImplOptions.NoInlining)]
-			private static void UpdateCache(ICustomAttributeProvider obj, in CustomAttributeState __state,
-				object[]? __result)
+			public static Exception? Finalizer(Exception? __exception, in CustomAttributeState __state)
 			{
-				var key = new CustomAttributeCache(obj, __state.AttributeType.TypeHandle, __state.Inherit);
-				
-				CustomAttributeCache.GetExistingReference(in key).Attributes = __result;
+				if (__state.ShouldStore && __exception != null)
+					ClearInProgress(ref Unsafe.AsRef(in __state.Key));
+
+				return __exception;
+			}
+
+			[MethodImpl(MethodImplOptions.NoInlining)]
+			private static bool TryUseCache(Dictionary<CustomAttributeCache, CustomAttributeCacheValue> cache,
+				ref CustomAttributeCache key, out object[]? result)
+			{
+				if (!cache.TryGetValue(key, out var value))
+				{
+					result = null;
+					return false;
+				}
+
+				switch (value.Status)
+				{
+				case CustomAttributeCacheStatus.Completed:
+					result = value.Attributes;
+					return true;
+				case CustomAttributeCacheStatus.InProgress:
+					LogInProgress(ref key);
+					result = null;
+					return false;
+				default:
+					result = null;
+					return false;
+				}
+			}
+
+			[MethodImpl(MethodImplOptions.NoInlining)]
+			private static void MarkInProgress(ref CustomAttributeCache key)
+			{
+				var value = new CustomAttributeCacheValue
+				{
+					Status = CustomAttributeCacheStatus.InProgress
+				};
 
 				lock (_lock)
-					CustomAttributeCache.GetDirectly.GetReference(ref key).Attributes = __result;
+				{
+					CustomAttributeCache.Get[key] = value;
+					CustomAttributeCache.GetDirectly[key] = value;
+				}
+			}
+
+			[MethodImpl(MethodImplOptions.NoInlining)]
+			private static void StoreCompleted(ref CustomAttributeCache key, object[] result)
+			{
+				var value = new CustomAttributeCacheValue
+				{
+					Attributes = result,
+					Status = CustomAttributeCacheStatus.Completed
+				};
+
+				lock (_lock)
+				{
+					CustomAttributeCache.Get[key] = value;
+					CustomAttributeCache.GetDirectly[key] = value;
+				}
+			}
+
+			[MethodImpl(MethodImplOptions.NoInlining)]
+			private static void ClearInProgress(ref CustomAttributeCache key)
+			{
+				lock (_lock)
+				{
+					if (CustomAttributeCache.Get.TryGetValue(key, out var localValue)
+						&& localValue.Status == CustomAttributeCacheStatus.InProgress)
+					{
+						CustomAttributeCache.Get.Remove(key);
+					}
+
+					if (CustomAttributeCache.GetDirectly.TryGetValue(key, out var centralValue)
+						&& centralValue.Status == CustomAttributeCacheStatus.InProgress)
+					{
+						CustomAttributeCache.GetDirectly.Remove(key);
+					}
+				}
+			}
+
+			[MethodImpl(MethodImplOptions.NoInlining)]
+			private static void LogInProgress(ref CustomAttributeCache _)
+			{
 			}
 
 			private static object _lock = new();
@@ -556,12 +651,20 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 		public record struct CustomAttributeCacheValue
 		{
 			public object[]? Attributes;
+			public CustomAttributeCacheStatus Status;
 		}
 
 		public record struct CustomAttributeState
 		{
-			public bool State, Inherit;
-			public Type AttributeType;
+			public bool ShouldStore;
+			public CustomAttributeCache Key;
+		}
+
+		public enum CustomAttributeCacheStatus : byte
+		{
+			Uninitialized,
+			InProgress,
+			Completed
 		}
 	}
 
@@ -752,7 +855,8 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			//}
 
 			public override MethodBase TargetMethodInfo { get; }
-				= AccessTools.DeclaredMethod(typeof(MonoField), nameof(MonoField.GetValue))!;
+				= AccessTools.DeclaredMethod(AccessTools.TypeByName("System.Reflection.RuntimeFieldInfo"),
+					nameof(FieldInfo.GetValue), [typeof(object)])!;
 
 			[MethodImpl(MethodImplOptions.AggressiveInlining)]
 			public static bool Prefix(FieldInfo __instance, object? obj, ref object? __result)
