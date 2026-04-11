@@ -26,6 +26,9 @@ public sealed class UtilityPrepatches : ClassWithFishPrepatches
 
 		public override MethodBase TargetMethodBase { get; } = methodof(LoadedModManager.CreateModClasses);
 
+		public override void Transpiler(ILProcessor ilProcessor, ModuleDefinition module)
+			=> ilProcessor.ReplaceBodyWith(ReplacementBody);
+
 		public static void Prefix()
 		{
 			try
@@ -37,6 +40,59 @@ public sealed class UtilityPrepatches : ClassWithFishPrepatches
 				Log.Error($"Exception caught within OnAssembliesLoaded:\n{e}\n{new StackTrace(true)}");
 			}
 		}
+
+		public static void ReplacementBody()
+		{
+			var runningModClasses = RunningModClasses;
+			var assemblyToModContentPack = BuildAssemblyToModContentPackMap();
+
+			foreach (var type in typeof(Mod).InstantiableDescendantsAndSelf())
+			{
+				if (type is null)
+					continue;
+
+				DeepProfiler.Start("Loading " + type?.ToString() + " mod class");
+				try
+				{
+					if (!runningModClasses.ContainsKey(type))
+					{
+						assemblyToModContentPack.TryGetValue(type.Assembly, out var modContentPack);
+						runningModClasses[type] = (Mod)Activator.CreateInstance(type, modContentPack);
+					}
+				}
+				catch (Exception ex)
+				{
+					Log.Error("Error while instantiating a mod of type " + type?.ToString() + ": " + ex);
+				}
+				finally
+				{
+					DeepProfiler.End();
+				}
+			}
+		}
+
+		private static Dictionary<Assembly, ModContentPack> BuildAssemblyToModContentPackMap()
+		{
+			var runningMods = LoadedModManager.RunningModsListForReading;
+			var assemblyToModContentPack = new Dictionary<Assembly, ModContentPack>();
+
+			for (var i = 0; i < runningMods.Count; i++)
+			{
+				var modContentPack = runningMods[i];
+				var loadedAssemblies = modContentPack.assemblies.loadedAssemblies;
+
+				for (var j = 0; j < loadedAssemblies.Count; j++)
+					assemblyToModContentPack.TryAdd(loadedAssemblies[j], modContentPack);
+			}
+
+			return assemblyToModContentPack;
+		}
+
+		private static Dictionary<Type, Mod> RunningModClasses
+			=> (Dictionary<Type, Mod>)(_runningModClassesField ??=
+				AccessTools.Field(typeof(LoadedModManager), "runningModClasses")).GetValue(null)!;
+
+		private static FieldInfo? _runningModClassesField;
 	}
 
 	public sealed class NoSteamLogWarning : FishPrepatch
