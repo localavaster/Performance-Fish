@@ -101,7 +101,10 @@ public static class MiscExtensions
 
 	public static Map? TryGetMapHeld(this Thing thing)
 	{
-		var maps = Current.Game.Maps;
+		var maps = Find.Maps;
+		if (maps == null)
+			return thing.ParentHolder is { } rootHolder ? ThingOwnerUtility.GetRootMap(rootHolder) : null;
+
 		var mapIndex = (uint)thing.mapIndexOrState;
 
 		return mapIndex < (uint)maps.Count
@@ -114,7 +117,10 @@ public static class MiscExtensions
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static Map? TryGetMap(this Thing thing)
 	{
-		var maps = Current.Game.Maps;
+		var maps = Find.Maps;
+		if (maps == null)
+			return null;
+
 		var mapIndex = (uint)thing.mapIndexOrState;
 		
 		return mapIndex < (uint)maps.Count ? maps[(int)mapIndex] : null;
@@ -127,7 +133,18 @@ public static class MiscExtensions
 	public static Map GetMap(this Region region) => Current.Game.Maps[region.mapIndex];
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static bool IsSpawned(this Thing thing) => (uint)thing.mapIndexOrState < (uint)Current.Game.Maps.Count;
+	public static bool IsSpawned(this Thing thing)
+	{
+		var maps = Find.Maps;
+		if (thing.mapIndexOrState < 0 || maps == null)
+			return false;
+
+		if (thing.mapIndexOrState < maps.Count)
+			return true;
+
+		Verse.Log.ErrorOnce($"Thing {thing.ThingID} is associated with invalid map index {thing.mapIndexOrState}", 64664487);
+		return false;
+	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static int GetLoadID(this Bill bill) => bill.loadID;

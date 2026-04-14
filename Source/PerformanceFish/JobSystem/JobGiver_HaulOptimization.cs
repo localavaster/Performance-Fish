@@ -3,6 +3,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+using System.Linq;
 using PerformanceFish.ModCompatibility;
 
 namespace PerformanceFish.JobSystem;
@@ -41,11 +42,19 @@ public sealed class JobGiver_HaulOptimization : ClassWithFishPatches
 			}
 		}
 
-		public static List<Thing> SortedThingsPotentiallyNeedingHauling(List<Thing> things, Pawn pawn)
+		public static ICollection<Thing> SortedThingsPotentiallyNeedingHauling(ICollection<Thing> things, Pawn pawn)
 		{
 			((ThingPositionComparer)_comparer.Target).rootCell = pawn.Position;
-			things.Sort(_comparer);
-			return things;
+
+			if (things is List<Thing> list)
+			{
+				list.Sort(_comparer);
+				return list;
+			}
+
+			var sortedThings = things.ToList();
+			sortedThings.Sort(_comparer);
+			return sortedThings;
 		}
 
 		private static Comparison<Thing> _comparer = new ThingPositionComparer().Compare;

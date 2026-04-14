@@ -12,6 +12,9 @@ namespace PerformanceFish.Listers;
 
 public sealed class ThingsPrepatches : ClassWithFishPrepatches
 {
+	private static readonly AccessTools.FieldRef<ListerThings, List<IHaulSource>> _haulSources
+		= AccessTools.FieldRefAccess<ListerThings, List<IHaulSource>>("haulSources");
+
 	public sealed class AddPatch : FishPrepatch
 	{
 		public override string? Description { get; }
@@ -31,6 +34,8 @@ public sealed class ThingsPrepatches : ClassWithFishPrepatches
 			lock (__instance.LockObject())
 			{
 				AddToDefList(__instance, t);
+				if (t is IHaulSource haulSource)
+					_haulSources(__instance).Add(haulSource);
 
 				var allGroups = ThingListGroupHelper.AllGroups;
 				foreach (var thingRequestGroup in allGroups)
@@ -74,6 +79,8 @@ public sealed class ThingsPrepatches : ClassWithFishPrepatches
 			lock (__instance.LockObject())
 			{
 				RemoveFromDefList(__instance, t);
+				if (t is IHaulSource haulSource)
+					_haulSources(__instance).Remove(haulSource);
 
 				var allGroups = ThingListGroupHelper.AllGroups;
 				for (var i = 0; i < allGroups.Length; i++)
@@ -268,6 +275,7 @@ public sealed class ThingsPrepatches : ClassWithFishPrepatches
 				
 				__instance.IndexMapByDef().Clear();
 				__instance.IndexMapByGroup().Clear();
+				_haulSources(__instance).Clear();
 				ClearTypeLists(__instance);
 			}
 			

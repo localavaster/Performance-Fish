@@ -93,9 +93,9 @@ public sealed class TextureLoadingPatches : ClassWithFishPrepatches
 				var data = file.ReadAllBytes();
 				texture2D = new(2, 2, TextureFormat.Alpha8, true);
 				texture2D.LoadImage(data);
-				FixMipMapsIfNeeded(texture2D, data, file);
+				FixMipMapsIfNeeded(ref texture2D, data, file);
 			}
-			
+
 			if (!isDds && Prefs.TextureCompression)
 				texture2D.Compress(true);
 			
@@ -120,11 +120,11 @@ public sealed class TextureLoadingPatches : ClassWithFishPrepatches
 
 			var texture2D = new Texture2D(2, 2, TextureFormat.Alpha8, true);
 			texture2D.LoadImage(data);
-			FixMipMapsIfNeeded(texture2D, data, file);
+			FixMipMapsIfNeeded(ref texture2D, data, file);
 			return texture2D;
 		}
 
-		public static void FixMipMapsIfNeeded(Texture2D texture2D, byte[] data, VirtualFile file)
+		public static void FixMipMapsIfNeeded(ref Texture2D texture2D, byte[] data, VirtualFile file)
 		{
 			if (((texture2D.width & 3) == 0) & ((texture2D.height & 3) == 0))
 				return;

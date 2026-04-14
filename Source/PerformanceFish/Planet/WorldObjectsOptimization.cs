@@ -17,6 +17,7 @@ public sealed class WorldObjectsOptimization : ClassWithFishPrepatches
 	{
 		private static FishTable<Type, bool> _skippableCompTypes = null!;
 		private static FishTable<Type, bool> _skippableWorldObjectTypes = null!;
+		private static readonly List<IThingHolder> _tmpThingHolders = [];
 
 		public override string? Description { get; }
 			= "The world objects holder is responsible for ticking every world object. This includes settlements, "
@@ -73,16 +74,44 @@ public sealed class WorldObjectsOptimization : ClassWithFishPrepatches
 
 		private static bool CanSkipWorldObjectTick(WorldObject worldObject)
 		{
-#if V1_6
-			if (worldObject is IThingHolder)
+			return IsSkippableWorldObjectType(worldObject.GetType()) && !HasTickableContents(worldObject);
+		}
+
+		private static bool HasTickableContents(WorldObject worldObject)
+		{
+			if (worldObject is not IThingHolder holder)
 				return false;
-#endif
-			return IsSkippableWorldObjectType(worldObject.GetType());
+
+			lock (_tmpThingHolders)
+			{
+				_tmpThingHolders.Clear();
+				_tmpThingHolders.Add(holder);
+				holder.GetChildHolders(_tmpThingHolders);
+
+				for (var i = 0; i < _tmpThingHolders.Count; i++)
+				{
+					var thingHolder = _tmpThingHolders[i];
+					if (thingHolder is IThingHolderTickable tickable && !tickable.ShouldTickContents)
+						continue;
+
+					var directlyHeldThings = thingHolder.GetDirectlyHeldThings();
+					if (directlyHeldThings?.Owner is not null and not Map and not Caravan)
+					{
+						_tmpThingHolders.Clear();
+						return true;
+					}
+				}
+
+				_tmpThingHolders.Clear();
+				return false;
+			}
 		}
 
 		private static bool CanSkipCompTick(WorldObject worldObject)
 		{
 			var comps = worldObject.comps;
+			if (comps.Count == 0)
+				return true;
 
 			for (var i = comps.Count; i-- > 0;)
 			{
@@ -92,8 +121,6 @@ public sealed class WorldObjectsOptimization : ClassWithFishPrepatches
 
 				if (!IsSkippableCompType(comp.GetType()))
 					return false;
-				
-				comp.CompTick();
 			}
 
 			return true;
@@ -106,10 +133,7 @@ public sealed class WorldObjectsOptimization : ClassWithFishPrepatches
 		private static Type?[]
 			_whitelistedTickingCompTypes =
 			[
-				typeof(WorldObjectComp),
-				typeof(FormCaravanComp),
-				typeof(TimedDetectionRaids),
-				typeof(EnterCooldownComp)
+				typeof(WorldObjectComp)
 			],
 			_whitelistedWorldObjectTypes =
 			[

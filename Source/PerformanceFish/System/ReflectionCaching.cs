@@ -10,6 +10,7 @@ using System.Security;
 using System.Threading.Tasks;
 using PerformanceFish.Cache;
 using PerformanceFish.ModCompatibility;
+#if false
 using ConstructorInfoCache
 	= PerformanceFish.Cache.ByReference<System.RuntimeTypeHandle, System.Reflection.BindingFlags,
 		PerformanceFish.System.ReflectionCaching.RecordArray<System.Type>,
@@ -56,11 +57,13 @@ using ActivatorCache
 using CustomAttributeCache
 	= PerformanceFish.Cache.ByReferenceClassic<System.Reflection.ICustomAttributeProvider, System.RuntimeTypeHandle, bool,
 		PerformanceFish.System.ReflectionCaching.MonoCustomAttrs.CustomAttributeCacheValue>;
+#endif
 
 namespace PerformanceFish.System;
 
 public sealed class ReflectionCaching : ClassWithFishPatches
 {
+#if false
 	static ReflectionCaching() // necessary to prevent recursion between patches and function pointer creation
 	{
 		try
@@ -86,6 +89,7 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 				ex}");
 		}
 	}
+#endif
 
 	public record struct StateAndFlags
 	{
@@ -93,6 +97,7 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 		public BindingFlags Flags;
 	}
 
+#if false
 	public sealed class TypePatches
 	{
 		public sealed class GetField_Patch : FishPatch
@@ -513,8 +518,16 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 				var key = new CustomAttributeCache(obj, attributeType.TypeHandle, inherit);
 				__state = new() { Key = key };
 
-				if (TryGetCachedAttributes(ref key, out __result))
+				var cacheLookup = TryGetCachedAttributes(ref key, out __result);
+
+				if (cacheLookup == CustomAttributeCacheLookup.Hit)
 					return false;
+
+				if (cacheLookup == CustomAttributeCacheLookup.InProgress)
+				{
+					__result = null;
+					return true;
+				}
 
 				MarkInProgress(ref key);
 				__state.ShouldStore = true;
@@ -523,14 +536,17 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			}
 
 			[MethodImpl(MethodImplOptions.NoInlining)]
-			private static bool TryGetCachedAttributes(ref CustomAttributeCache key, out object[]? result)
+			private static CustomAttributeCacheLookup TryGetCachedAttributes(ref CustomAttributeCache key,
+				out object[]? result)
 			{
 				lock (_lock)
 				{
-					if (TryUseCache(CustomAttributeCache.Get, ref key, out result))
-						return true;
+					var localLookup = TryUseCache(CustomAttributeCache.Get, ref key, out result);
+					if (localLookup != CustomAttributeCacheLookup.Miss)
+						return localLookup;
 
-					if (TryUseCache(CustomAttributeCache.GetDirectly, ref key, out var centralResult))
+					var centralLookup = TryUseCache(CustomAttributeCache.GetDirectly, ref key, out var centralResult);
+					if (centralLookup == CustomAttributeCacheLookup.Hit)
 					{
 						result = centralResult;
 						CustomAttributeCache.Get[key] = new()
@@ -538,12 +554,15 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 							Attributes = centralResult,
 							Status = CustomAttributeCacheStatus.Completed
 						};
-						return true;
+						return CustomAttributeCacheLookup.Hit;
 					}
+
+					if (centralLookup == CustomAttributeCacheLookup.InProgress)
+						return CustomAttributeCacheLookup.InProgress;
 				}
 
 				result = null;
-				return false;
+				return CustomAttributeCacheLookup.Miss;
 			}
 
 			[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -566,27 +585,28 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			}
 
 			[MethodImpl(MethodImplOptions.NoInlining)]
-			private static bool TryUseCache(Dictionary<CustomAttributeCache, CustomAttributeCacheValue> cache,
+			private static CustomAttributeCacheLookup TryUseCache(
+				Dictionary<CustomAttributeCache, CustomAttributeCacheValue> cache,
 				ref CustomAttributeCache key, out object[]? result)
 			{
 				if (!cache.TryGetValue(key, out var value))
 				{
 					result = null;
-					return false;
+					return CustomAttributeCacheLookup.Miss;
 				}
 
 				switch (value.Status)
 				{
 				case CustomAttributeCacheStatus.Completed:
 					result = value.Attributes;
-					return true;
+					return CustomAttributeCacheLookup.Hit;
 				case CustomAttributeCacheStatus.InProgress:
 					LogInProgress(ref key);
 					result = null;
-					return false;
+					return CustomAttributeCacheLookup.InProgress;
 				default:
 					result = null;
-					return false;
+					return CustomAttributeCacheLookup.Miss;
 				}
 			}
 
@@ -665,6 +685,13 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			Uninitialized,
 			InProgress,
 			Completed
+		}
+
+		private enum CustomAttributeCacheLookup : byte
+		{
+			Miss,
+			Hit,
+			InProgress
 		}
 	}
 
@@ -854,9 +881,11 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			//	Log.Message(types.ToStringSafeEnumerable());
 			//}
 
-			public override MethodBase TargetMethodInfo { get; }
-				= AccessTools.DeclaredMethod(AccessTools.TypeByName("System.Reflection.RuntimeFieldInfo"),
-					nameof(FieldInfo.GetValue), [typeof(object)])!;
+			public override MethodBase? TargetMethodInfo { get; }
+				= AccessTools.DeclaredMethod(
+					AccessTools.TypeByName("System.Reflection.RuntimeFieldInfo")
+					?? AccessTools.TypeByName("System.Reflection.MonoField"),
+					nameof(FieldInfo.GetValue), [typeof(object)]);
 
 			[MethodImpl(MethodImplOptions.AggressiveInlining)]
 			public static bool Prefix(FieldInfo __instance, object? obj, ref object? __result)
@@ -1285,4 +1314,5 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 		// populated with dynamic methods by MethodBasePatches.MakeInvokeDelegate, MakeGetterDelegate and
 		// MakeSetterDelegate
 	}
+#endif
 }

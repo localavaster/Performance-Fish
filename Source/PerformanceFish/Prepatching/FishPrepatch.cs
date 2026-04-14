@@ -105,7 +105,7 @@ public abstract class FishPrepatch : FishPrepatchBase
 				Log.Error($"Exception while applying postfix for {GetType().FullName}\n{e}\n{new StackTrace(true)}");
 			}
 		}
-		
+
 		targetMethodBody.SimplifyMacros();
 		targetMethodBody.OptimizeMacros();
 	}

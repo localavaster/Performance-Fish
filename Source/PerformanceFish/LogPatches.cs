@@ -59,15 +59,16 @@ public sealed class LogPatches : ClassWithFishPrepatches
 		public static void InsertEarlyMessages()
 		{
 			var unhandledMessages = Log.UnhandledMessages;
-			if (unhandledMessages is null)
-				Debug.LogError("Message queue is null");
-			
+
 			Log.Ready = true;
-			
+
 			Verse.Log.messageQueue.Enqueue(new(LogMessageType.Message, PERFORMANCE_FISH_WELCOME_MESSAGE,
 				PERFORMANCE_FISH_WELCOME_STACKTRACE));
 
-			while (unhandledMessages!.TryDequeue(out var message))
+			if (unhandledMessages is null)
+				return;
+
+			while (unhandledMessages.TryDequeue(out var message))
 			{
 				try
 				{

@@ -24,11 +24,11 @@ public static class StorageExtensions
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static CompProperties? TryGetLwmCompProperties(this Thing thing)
-		=> LwmCompCache.GetOrAdd(thing).CompProperties;
+		=> LwmCompCache.GetOrAdd(thing.def).CompProperties;
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static DefModExtension? TryGetRimfactoryExtension(this Thing thing)
-		=> RimfactoryExtensionCache.GetOrAdd(thing).ModExtension;
+		=> RimfactoryExtensionCache.GetOrAdd(thing.def).ModExtension;
 
 	public static int GetTotalSlots(this SlotGroup slotGroup) => slotGroup.GetTotalSlots(slotGroup.CellsList.Count);
 	

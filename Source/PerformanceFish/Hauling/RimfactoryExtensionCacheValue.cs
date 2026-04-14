@@ -4,7 +4,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 global using RimfactoryExtensionCache
-	= PerformanceFish.Cache.ByReference<Verse.Thing, PerformanceFish.Hauling.RimfactoryExtensionCacheValue>;
+	= PerformanceFish.Cache.ByReference<Verse.ThingDef, PerformanceFish.Hauling.RimfactoryExtensionCacheValue>;
 using RimfactoryTypes = PerformanceFish.ModCompatibility.Types.Rimfactory;
 
 namespace PerformanceFish.Hauling;
@@ -13,17 +13,17 @@ public record struct RimfactoryExtensionCacheValue
 {
 	public DefModExtension? ModExtension;
 
-	public static DefModExtension? TryGetExtension(Thing slotGroupParent)
+	public static DefModExtension? TryGetExtension(ThingDef thingDef)
 		=> RimfactoryTypes.ModExtension != null
-			? slotGroupParent.def.modExtensions?.Find(_extensionPredicate)
+			? thingDef.modExtensions?.Find(_extensionPredicate)
 			: null;
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static bool HasExtension(Thing slotGroupParent)
-		=> RimfactoryTypes.ModExtension != null && TestExtension(slotGroupParent);
+	public static bool HasExtension(Thing thing)
+		=> RimfactoryTypes.ModExtension != null && TestExtension(thing.def);
 
 	[MethodImpl(MethodImplOptions.NoInlining)]
-	private static bool TestExtension(Thing slotGroupParent) => slotGroupParent.TryGetRimfactoryExtension() != null;
+	private static bool TestExtension(ThingDef thingDef) => TryGetExtension(thingDef) != null;
 
 	static RimfactoryExtensionCacheValue() => EnsureInitialized();
 

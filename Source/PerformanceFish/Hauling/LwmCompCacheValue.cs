@@ -3,7 +3,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-global using LwmCompCache = PerformanceFish.Cache.ByReference<Verse.Thing, PerformanceFish.Hauling.LwmCompCacheValue>;
+global using LwmCompCache = PerformanceFish.Cache.ByReference<Verse.ThingDef, PerformanceFish.Hauling.LwmCompCacheValue>;
 
 namespace PerformanceFish.Hauling;
 
@@ -11,9 +11,9 @@ public record struct LwmCompCacheValue
 {
 	public CompProperties? CompProperties;
 
-	public static CompProperties? TryGetLwmProps(Thing slotGroupParent)
+	public static CompProperties? TryGetLwmProps(ThingDef thingDef)
 		=> ModCompatibility.Types.LWM.CompProperties != null
-			? slotGroupParent.def.comps?.Find(static props
+			? thingDef.comps?.Find(static props
 				=> props.GetType() == ModCompatibility.Types.LWM.CompProperties)
 			: null;
 

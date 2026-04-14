@@ -98,10 +98,59 @@ public sealed class GeneTrackerOptimization : ClassWithFishPrepatches
 		private static bool IsSkippableType(Type type) => _skippableTypes.GetOrAdd(type);
 
 		private static bool ComputeIsSkippableType(Type type)
-			=> type == typeof(Gene)
-				|| type.GetMethod(nameof(Gene.Tick), global::System.Reflection.BindingFlags.Instance
-					| global::System.Reflection.BindingFlags.Public
-					| global::System.Reflection.BindingFlags.NonPublic
-					| global::System.Reflection.BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null) == null;
+		{
+			if (type == typeof(Gene))
+				return true;
+
+			var tickMethod = type.GetMethod(nameof(Gene.Tick), global::System.Reflection.BindingFlags.Instance
+				| global::System.Reflection.BindingFlags.Public
+				| global::System.Reflection.BindingFlags.NonPublic, null, Type.EmptyTypes, null);
+			var tickIntervalMethod = type.GetMethod(nameof(Gene.TickInterval),
+				global::System.Reflection.BindingFlags.Instance
+				| global::System.Reflection.BindingFlags.Public
+				| global::System.Reflection.BindingFlags.NonPublic, null, [typeof(int)], null);
+
+			return tickMethod?.DeclaringType == typeof(Gene)
+				&& tickIntervalMethod?.DeclaringType == typeof(Gene);
+		}
+	}
+
+	public sealed class GeneTrackerTickIntervalPatch : FishPrepatch
+	{
+		// i am iffy about this
+		public override string? Description { get; }
+			= "Every pawn has a gene tracker, which is responsible for ticking each of their genes. Normally it ticks "
+			+ "all of them equally, including those don't change or affect anything through ticking, like skin colors "
+			+ "or basic stat modifiers. This patch improves the gene tracker to determine genes that need ticking in "
+			+ "advance, cache the list of them, and only tick those, skipping all the others.";
+
+		public override MethodBase TargetMethodBase { get; }
+			= AccessTools.Method(typeof(Pawn_GeneTracker), nameof(Pawn_GeneTracker.GeneTrackerTickInterval));
+
+		public override void Transpiler(ILProcessor ilProcessor, ModuleDefinition module)
+			=> ilProcessor.ReplaceBodyWith(GeneTrackerTickInterval);
+
+		public static void GeneTrackerTickInterval(Pawn_GeneTracker instance, int delta)
+		{
+			if (!ModLister.BiotechInstalled)
+				return;
+
+			var genesToTick = instance.GenesToTick();
+			if (GeneTrackerTickPatch.Dirty(instance, genesToTick))
+				GeneTrackerTickPatch.Update(instance, genesToTick);
+
+			for (var i = genesToTick.Count - 1; i >= 0; i--)
+			{
+				if (genesToTick[i].Active)
+					genesToTick[i].TickInterval(delta);
+			}
+
+			if (instance.pawn.IsSpawned()
+				&& instance.Xenotype != XenotypeDefOf.Baseliner
+				&& instance.pawn.IsHashIntervalTick(300, delta))
+			{
+				LessonAutoActivator.TeachOpportunity(ConceptDefOf.GenesAndXenotypes, OpportunityType.Important);
+			}
+		}
 	}
 }

@@ -193,8 +193,6 @@ public abstract class FishPatch : SingletonFactory<FishPatch>, IExposable, IHasD
 		Patched = true;
 		foreach (var method in TargetMethodInfos)
 		{
-			DebugLog.Message($"Performance Fish is applying {GetType().Name} on {method.FullDescription()}");
-
 			try
 			{
 				if (IsBenchmarking)
@@ -232,6 +230,7 @@ public abstract class FishPatch : SingletonFactory<FishPatch>, IExposable, IHasD
 							finalizer: TryMakeHarmonyMethod(FinalizerMethodInfo, FinalizerMethodPriority)));
 					}
 				}
+
 			}
 			catch (Exception e)
 			{
@@ -290,6 +289,9 @@ public abstract class FishPatch : SingletonFactory<FishPatch>, IExposable, IHasD
 
 	private MethodInfo? TryGetMethod(string nameCaseInsensitive, Predicate<MethodInfo>? predicate = null)
 		=> GetType().TryGetMethod(nameCaseInsensitive, predicate);
+
+	private static string GetTargetMethodName(MethodBase method)
+		=> $"{method.DeclaringType?.FullName ?? "<no-type>"}.{method.Name}";
 
 	private static int TryGetPriority(MethodInfo? info)
 		=> info?.TryGetAttribute<HarmonyPriority>()?.info.priority ?? Priority.Normal;

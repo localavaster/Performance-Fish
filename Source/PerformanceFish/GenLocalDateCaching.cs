@@ -19,45 +19,17 @@ public sealed class GenLocalDateCaching : ClassWithFishPatches
 			+ "optimization, but yields accurate results instead of a placeholder value to avoid issues";
 
 		public override Delegate TargetMethodGroup { get; } = (Func<Thing, int>)GenLocalDate.DayTick;
-		public override int TranspilerMethodPriority => Priority.First;
+		public override int PrefixMethodPriority => Priority.First;
 
-		public static CodeInstructions Transpiler(CodeInstructions codes, MethodBase method, ILGenerator generator)
-			//=> Reflection.GetCodeInstructions(Replacement);
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static bool Prefix(Thing thing, ref int __result)
 		{
-			var labelToStartOfMethod = generator.DefineLabel();
-			codes.First().labels.Add(labelToStartOfMethod);
+			if (thing.TryGetMap() is not { } map)
+				return true;
 
-			yield return FishTranspiler.Argument(method, "thing");
-			yield return FishTranspiler.Field(typeof(Thing), nameof(Thing.mapIndexOrState));
-			yield return FishTranspiler.Constant(0);
-			yield return FishTranspiler.IfLessThan(labelToStartOfMethod);
-
-			yield return FishTranspiler.Field(typeof(Current), nameof(Current.gameInt));
-			yield return FishTranspiler.Field(typeof(Game), nameof(Game.maps));
-			yield return FishTranspiler.Argument(method, "thing");
-			yield return FishTranspiler.Field(typeof(Thing), nameof(Thing.mapIndexOrState));
-			yield return FishTranspiler.Call(typeof(List<Map>), "get_Item");
-			yield return FishTranspiler.Call<Func<Map, int>>(GenLocalDate.DayTick);
-			yield return FishTranspiler.Return;
-
-			foreach (var code in codes)
-				yield return code;
+			__result = GenLocalDate.DayTick(map);
+			return false;
 		}
-
-		//[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		//public static int Replacement(Thing thing)
-		//	=> thing.mapIndexOrState < 0 ? GenDate.DayTick(GenTicks.TicksAbs, GenLocalDate.LongitudeForDate(thing))
-		//	: GenLocalDate.DayTick(Current.gameInt.maps[thing.mapIndexOrState]);
-
-		//[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		//public static bool Prefix(Thing thing, ref int __result)
-		//{
-		//	if (thing.mapIndexOrState < 0)
-		//		return true;
-
-		//	__result = GenLocalDate.DayTick(Current.gameInt.maps[thing.mapIndexOrState]);
-		//	return false;
-		//}
 	}
 
 	public sealed class DayTickByMap_Patch : FishPatch

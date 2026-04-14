@@ -13,8 +13,9 @@ public static class FishPrepatchExtensions
 	{
 		var prepatches = ToSortedList(allPrepatchClasses, true);
 		
-		foreach (var prepatch in prepatches)
+		for (var i = 0; i < prepatches.Count; i++)
 		{
+			var prepatch = prepatches[i];
 			if (!prepatch.Enabled)
 				continue;
 			
@@ -40,8 +41,9 @@ public static class FishPrepatchExtensions
 	{
 		var prepatches = ToSortedList(allPrepatchClasses, false);
 
-		foreach (var prepatch in prepatches)
+		for (var i = 0; i < prepatches.Count; i++)
 		{
+			var prepatch = prepatches[i];
 			if (!prepatch.IsActive)
 				continue;
 			
@@ -70,4 +72,5 @@ public static class FishPrepatchExtensions
 		prepatches.Sort(FishPrepatchBase.PriorityComparer);
 		return prepatches;
 	}
+
 }

@@ -56,8 +56,8 @@ public sealed class RecipeDefCaching : ClassWithFishPatches
 		{
 			private int _defDatabaseVersion = -2;
 			private int _defRecipeUsersVersion = -2;
-			private RecipeDef _def;
-			public List<ThingDef> RecipeUsers;
+			private RecipeDef? _def;
+			public List<ThingDef> RecipeUsers = [];
 
 			public void Update(RecipeDef instance, IEnumerable<ThingDef> result)
 			{
@@ -81,7 +81,7 @@ public sealed class RecipeDefCaching : ClassWithFishPatches
 				[MethodImpl(MethodImplOptions.AggressiveInlining)]
 				get
 					=> _defDatabaseVersion != DefDatabase<ThingDef>.defsList._version
-						|| _defRecipeUsersVersion != (_def.recipeUsers?._version ?? 0);
+						|| _defRecipeUsersVersion != (_def?.recipeUsers?._version ?? 0);
 			}
 		}
 	}
