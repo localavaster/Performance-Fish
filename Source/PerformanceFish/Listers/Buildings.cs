@@ -243,10 +243,11 @@ public sealed class Buildings : ClassWithFishPrepatches
 		private static void UpdateCacheOnAdd(ListerBuildings __instance, Building b, ThingDef def)
 		{
 			var cache = __instance.Cache();
-			
+
 			if (b.Faction == Faction.OfPlayer)
 			{
-				cache.ColonistBuildingsByDef.GetOrAdd(def).Add(b);
+				if (!cache.ColonistBuildingsByDef.GetOrAdd(def).TryAdd(b))
+					return;
 				if (b is Building_ResearchBench researchBench)
 					cache.ColonistResearchBenches.Add(researchBench);
 				
@@ -266,7 +267,7 @@ public sealed class Buildings : ClassWithFishPrepatches
 			}
 			else
 			{
-				cache.NonColonistBuildingsByDef.GetOrAdd(def).Add(b);
+				cache.NonColonistBuildingsByDef.GetOrAdd(def).TryAdd(b);
 			}
 		}
 	}
