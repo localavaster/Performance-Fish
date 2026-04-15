@@ -6,6 +6,7 @@
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 using PerformanceFish.Prepatching;
+using PerformanceFish.Utility;
 
 namespace PerformanceFish.Listers;
 
@@ -40,7 +41,21 @@ public sealed class Buildings : ClassWithFishPrepatches
 			=> ilProcessor.ReplaceBodyWith(ReplacementBody<Building>);
 
 		public static IEnumerable<T> ReplacementBody<T>(ListerBuildings __instance)
-			=> (IEnumerable<T>)__instance.Cache().ColonistBuildingsByType.GetOrAdd(typeof(T));
+			=> typeof(Building).IsAssignableFrom(typeof(T))
+				? (IEnumerable<T>)__instance.Cache().ColonistBuildingsByType.GetOrAdd(typeof(T))
+				: FallbackLoop<T>(__instance);
+
+		[MethodImpl(MethodImplOptions.NoInlining)]
+		private static IEnumerable<T> FallbackLoop<T>(ListerBuildings __instance)
+		{
+			var allBuildingsColonist = __instance.allBuildingsColonist;
+
+			for (var i = 0; i < allBuildingsColonist.Count; i++)
+			{
+				if (allBuildingsColonist[i] is T val)
+					yield return val;
+			}
+		}
 	}
 #endif
 	
@@ -256,14 +271,14 @@ public sealed class Buildings : ClassWithFishPrepatches
 				
 				var buildingType = b.GetType();
 
-				do
+				while (buildingType != null && typeof(Building).IsAssignableFrom(buildingType))
 				{
-					if (buildingType == null)
+					cache.ColonistBuildingsByType.GetOrAdd(buildingType).Add(b);
+					if (buildingType == typeof(Building))
 						break;
 
-					cache.ColonistBuildingsByType.GetOrAdd(buildingType).Add(b);
+					buildingType = buildingType.BaseType;
 				}
-				while ((buildingType = buildingType.BaseType) != typeof(Building));
 			}
 			else
 			{
@@ -313,14 +328,14 @@ public sealed class Buildings : ClassWithFishPrepatches
 
 				var buildingType = b.GetType();
 
-				do
+				while (buildingType != null && typeof(Building).IsAssignableFrom(buildingType))
 				{
-					if (buildingType == null)
+					cache.ColonistBuildingsByType.GetOrAdd(buildingType).Remove(b);
+					if (buildingType == typeof(Building))
 						break;
 
-					cache.ColonistBuildingsByType.GetOrAdd(buildingType).Remove(b);
+					buildingType = buildingType.BaseType;
 				}
-				while ((buildingType = buildingType.BaseType) != typeof(Building));
 			}
 			else
 			{
@@ -332,17 +347,43 @@ public sealed class Buildings : ClassWithFishPrepatches
 	public readonly record struct Cache()
 	{
 		public readonly FishTable<ThingDef, IndexedFishSet<Building>>
-			ColonistBuildingsByDef = [],
-			NonColonistBuildingsByDef = [];
+			ColonistBuildingsByDef = new() { ValueInitializer = static _ => InitializeBuildingsList<Building>() },
+			NonColonistBuildingsByDef = new() { ValueInitializer = static _ => InitializeBuildingsList<Building>() };
 
-		public readonly IndexedFishSet<Building_ResearchBench> ColonistResearchBenches = [];
+		public readonly IndexedFishSet<Building_ResearchBench> ColonistResearchBenches = InitializeBuildingsList<Building_ResearchBench>();
 		
-		public readonly IndexedFishSet<Building> ColonistDeepScanners = [];
+		public readonly IndexedFishSet<Building> ColonistDeepScanners = InitializeBuildingsList<Building>();
 
 		public readonly FishTable<Type, IList> ColonistBuildingsByType = new()
 		{
 			ValueInitializer = static type
-				=> (IList)Activator.CreateInstance(typeof(IndexedFishSet<>).MakeGenericType(type))
+				=> (IList)_buildingsListInitializerDefinition.MakeGenericMethod(type).Invoke(null, null)
 		};
+
+		private static readonly MethodInfo _buildingsListInitializerDefinition
+			= methodof(InitializeBuildingsList<Building>).GetGenericMethodDefinition();
+
+		public static unsafe IndexedFishSet<T> InitializeBuildingsList<T>() where T : Building
+#pragma warning disable CS8622
+			=> new(static () => new(0,
+				keyHashCodeByRefGetter: &GetKeyByRef,
+				keyHashCodeGetter: &ThingHelper.GetKey,
+				keyEqualityByRefComparer: &EqualsByKeyByRef,
+				keyEqualityComparer: &EqualsByKey));
+#pragma warning restore CS8622
+
+		private static int GetKeyByRef<T>(ref T thing) where T : Building => thing.GetKey();
+
+		private static bool EqualsByKey<T>(T? left, T? right) where T : Building
+			=> ReferenceEquals(left, right)
+				|| left is not null
+				&& right is not null
+				&& left.GetKey() == right.GetKey();
+
+		private static bool EqualsByKeyByRef<T>(ref T? left, ref T? right) where T : Building
+			=> ReferenceEquals(left, right)
+				|| left is not null
+				&& right is not null
+				&& left.GetKey() == right.GetKey();
 	}
 }
