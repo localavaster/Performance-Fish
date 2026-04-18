@@ -10,7 +10,6 @@ using System.Security;
 using System.Threading.Tasks;
 using PerformanceFish.Cache;
 using PerformanceFish.ModCompatibility;
-#if false
 using ConstructorInfoCache
 	= PerformanceFish.Cache.ByReference<System.RuntimeTypeHandle, System.Reflection.BindingFlags,
 		PerformanceFish.System.ReflectionCaching.RecordArray<System.Type>,
@@ -57,13 +56,11 @@ using ActivatorCache
 using CustomAttributeCache
 	= PerformanceFish.Cache.ByReferenceClassic<System.Reflection.ICustomAttributeProvider, System.RuntimeTypeHandle, bool,
 		PerformanceFish.System.ReflectionCaching.MonoCustomAttrs.CustomAttributeCacheValue>;
-#endif
 
 namespace PerformanceFish.System;
 
 public sealed class ReflectionCaching : ClassWithFishPatches
 {
-#if false
 	static ReflectionCaching() // necessary to prevent recursion between patches and function pointer creation
 	{
 		try
@@ -89,7 +86,6 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 				ex}");
 		}
 	}
-#endif
 
 	public record struct StateAndFlags
 	{
@@ -97,7 +93,6 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 		public BindingFlags Flags;
 	}
 
-#if false
 	public sealed class TypePatches
 	{
 		public sealed class GetField_Patch : FishPatch
@@ -387,6 +382,8 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 
 		public sealed class GetFullName : FishPatch
 		{
+			public override bool DefaultState => true;
+
 			public override string? Description { get; }
 				= "Normally averages at over 1000ns per call. Caching makes this about 30 times faster, including "
 				+ "Harmony overhead. Type.Name is similarly slow too, but unfortunately can't be patched as it's an "
@@ -397,53 +394,82 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 				= AccessTools.DeclaredPropertyGetter(typeof(RuntimeType), nameof(RuntimeType.FullName));
 
 			[MethodImpl(MethodImplOptions.AggressiveInlining)]
-			public static bool Prefix(RuntimeType __instance, ref string? __result, out bool __state)
+			public static bool Prefix(RuntimeType __instance, ref string? __result, out FullNameState __state)
 			{
-				ref var cache = ref TypeFullNameCache.GetOrAddReference(__instance.TypeHandle);
+				__state = default;
+				if (_fullNameRecursionDepth != 0)
+					return true;
 
-				if (!cache.Cached && !TryGetFromCentralCache(__instance, ref cache))
-					return __state = true;
+				__state.ReleaseGuard = true;
+				_fullNameRecursionDepth++;
+
+				var cache = TypeFullNameCache.GetOrAddReference(__instance.TypeHandle);
+				var fetchedFromCentralCache = false;
+				if (!cache.Cached)
+				{
+					fetchedFromCentralCache = TryGetFromCentralCache(__instance, out cache);
+					if (!fetchedFromCentralCache)
+					{
+						__state.ShouldStore = true;
+						return true;
+					}
+				}
+
+				if (fetchedFromCentralCache)
+					TypeFullNameCache.GetExistingReference(__instance.TypeHandle) = cache;
 
 				__result = cache.Name;
-				return __state = false;
+				return false;
 			}
 
 			[MethodImpl(MethodImplOptions.NoInlining)]
 			private static bool TryGetFromCentralCache(RuntimeType instance,
-				ref TypeFullNameCacheValue cache)
+				out TypeFullNameCacheValue cache)
 			{
 				lock (_lock)
 				{
-					ref var centralCache
-						= ref TypeFullNameCache.GetDirectly.GetOrAddReference(instance.TypeHandle);
-					cache.Name = centralCache.Name;
+					cache = TypeFullNameCache.GetDirectly.GetOrAddReference(instance.TypeHandle);
+					if (!cache.Cached)
+						return false;
 				}
 
-				return cache.Cached;
+				return true;
 			}
 
 			[MethodImpl(MethodImplOptions.AggressiveInlining)]
-			public static void Postfix(RuntimeType __instance, string? __result, bool __state)
+			public static void Postfix(RuntimeType __instance, string? __result, FullNameState __state)
 			{
-				if (!__state)
+				if (!__state.ShouldStore)
 					return;
 
 				UpdateCache(__instance, __result);
 			}
 
+			[MethodImpl(MethodImplOptions.AggressiveInlining)]
+			public static Exception? Finalizer(Exception? __exception, ref FullNameState __state)
+			{
+				if (__state.ReleaseGuard)
+					_fullNameRecursionDepth--;
+
+				return __exception;
+			}
+
 			[MethodImpl(MethodImplOptions.NoInlining)]
 			private static void UpdateCache(RuntimeType __instance, string? __result)
 			{
-				ref var cache = ref TypeFullNameCache.GetExistingReference(__instance.TypeHandle);
-				cache.Name = __result;
+				var cache = new TypeFullNameCacheValue
+				{
+					Cached = true,
+					Name = __result
+				};
+				TypeFullNameCache.GetExistingReference(__instance.TypeHandle) = cache;
 				
 				lock (_lock)
-				{
-					ref var centralCache
-						= ref TypeFullNameCache.GetDirectly.GetReference(__instance.TypeHandle);
-					centralCache.Name = __result;
-				}
+					TypeFullNameCache.GetDirectly.GetOrAddReference(__instance.TypeHandle) = cache;
 			}
+
+			[ThreadStatic]
+			private static int _fullNameRecursionDepth;
 
 			private static object _lock = new();
 		}
@@ -479,24 +505,16 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			public PropertyInfo? Info;
 		}
 
-		public record struct TypeFullNameCacheValue()
+		public record struct FullNameState
 		{
-			private object? _value = typeof(void);
+			public bool ReleaseGuard;
+			public bool ShouldStore;
+		}
 
-			public string? Name
-			{
-				[MethodImpl(MethodImplOptions.AggressiveInlining)]
-				get => Unsafe.As<string?>(_value);
-				
-				[MethodImpl(MethodImplOptions.AggressiveInlining)]
-				set => _value = value;
-			}
-
-			public bool Cached
-			{
-				[MethodImpl(MethodImplOptions.AggressiveInlining)]
-				get => _value is not MemberInfo;
-			}
+		public record struct TypeFullNameCacheValue
+		{
+			public bool Cached;
+			public string? Name;
 		}
 	}
 
@@ -504,6 +522,8 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 	{
 		public sealed class GetCustomAttributes : FishPatch
 		{
+			public override bool DefaultState => true;
+
 			public override string? Description { get; }
 				= "Caches attributes for reflection lookups. Decent load time improvement.";
 
@@ -539,16 +559,22 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			private static CustomAttributeCacheLookup TryGetCachedAttributes(ref CustomAttributeCache key,
 				out object[]? result)
 			{
+				var localLookup = TryUseCache(CustomAttributeCache.Get, ref key, out result);
+				if (localLookup == CustomAttributeCacheLookup.Hit)
+				{
+					result = CopyCachedAttributes(result!);
+					return CustomAttributeCacheLookup.Hit;
+				}
+
+				if (localLookup == CustomAttributeCacheLookup.InProgress)
+					return localLookup;
+
 				lock (_lock)
 				{
-					var localLookup = TryUseCache(CustomAttributeCache.Get, ref key, out result);
-					if (localLookup != CustomAttributeCacheLookup.Miss)
-						return localLookup;
-
 					var centralLookup = TryUseCache(CustomAttributeCache.GetDirectly, ref key, out var centralResult);
 					if (centralLookup == CustomAttributeCacheLookup.Hit)
 					{
-						result = centralResult;
+						result = CopyCachedAttributes(centralResult!);
 						CustomAttributeCache.Get[key] = new()
 						{
 							Attributes = centralResult,
@@ -567,19 +593,19 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 
 			[MethodImpl(MethodImplOptions.AggressiveInlining)]
 			public static void Postfix(ICustomAttributeProvider obj, object[]? __result,
-				in CustomAttributeState __state)
+				ref CustomAttributeState __state)
 			{
 				if (!__state.ShouldStore || __result is null)
 					return;
 
-				StoreCompleted(ref Unsafe.AsRef(in __state.Key), __result);
+				StoreCompleted(ref __state.Key, __result);
 			}
 
 			[MethodImpl(MethodImplOptions.NoInlining)]
-			public static Exception? Finalizer(Exception? __exception, in CustomAttributeState __state)
+			public static Exception? Finalizer(Exception? __exception, ref CustomAttributeState __state)
 			{
 				if (__state.ShouldStore && __exception != null)
-					ClearInProgress(ref Unsafe.AsRef(in __state.Key));
+					ClearInProgress(ref __state.Key);
 
 				return __exception;
 			}
@@ -630,7 +656,7 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			{
 				var value = new CustomAttributeCacheValue
 				{
-					Attributes = result,
+					Attributes = CopyCachedAttributes(result),
 					Status = CustomAttributeCacheStatus.Completed
 				};
 
@@ -664,6 +690,10 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			private static void LogInProgress(ref CustomAttributeCache _)
 			{
 			}
+
+			[MethodImpl(MethodImplOptions.AggressiveInlining)]
+			private static object[] CopyCachedAttributes(object[] attributes)
+				=> attributes.Length != 0 ? (object[])attributes.Clone() : Array.Empty<object>();
 
 			private static object _lock = new();
 		}
@@ -707,8 +737,12 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			Guard.IsNotNull(array);
 			Guard.IsLessThanOrEqualTo(array.Length, byte.MaxValue);
 			Array = array;
-			var length = array.Length;
-			_hashCode = HashCode.Combine(length, length > 0 && Array[0] is { } item ? item.GetHashCode() : 0);
+			var hashCode = array.Length;
+
+			for (var i = 0; i < array.Length; i++)
+				hashCode = global::System.HashCode.Combine(hashCode, array[i]);
+
+			_hashCode = hashCode;
 		}
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -717,13 +751,16 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			if (Array is null)
 				return other.Array is null;
 
+			if (_hashCode != other._hashCode)
+				return false;
+
 			if (other.Array is null || Array.Length != other.Array.Length)
 				return false;
 
 			var length = Array.Length;
 			for (var i = 0; i < length; i++)
 			{
-				if (!Array[i].Equals(other.Array![i]))
+				if (!EqualityComparer<T>.Default.Equals(Array[i], other.Array[i]))
 					return false;
 			}
 
@@ -738,6 +775,8 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 	{
 		public sealed class CreateInstance_Type : FishPatch
 		{
+			public override bool DefaultState => true;
+
 			public override List<string> IncompatibleModIDs { get; } = [PackageIDs.MULTIPLAYER];
 
 			public override string? Description { get; }
@@ -749,21 +788,94 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			[MethodImpl(MethodImplOptions.AggressiveInlining)]
 			public static bool Prefix(Type? type, ref object __result)
 			{
-				if (type is null)
+				if (type is not RuntimeType runtimeType)
 					return true;
-				
-				ref var cache = ref ActivatorCache.GetOrAddReference(type.TypeHandle);
+
+				ref var cache = ref ActivatorCache.GetOrAddReference(runtimeType.TypeHandle);
+
+				if (ReferenceEquals(cache.Result, _unsupportedActivatorSentinel))
+					return true;
+
+				if (cache.Result is not null)
+					return TryInvoke(ref __result, cache.Result);
+
+				if (!CanUseFastPath(runtimeType))
+					return MarkUnsupported(runtimeType, ref cache);
 				
 				if (cache.Dirty
-					&& !ActivatorCache.UpdateAsyncCache<ActivatorCacheValue, Type, Func<object>>(ref cache,
-						type.TypeHandle, type))
+					&& !ActivatorCache.UpdateAsyncCache<ActivatorCacheValue, RuntimeType, Func<object>>(ref cache,
+						runtimeType.TypeHandle, runtimeType))
 				{
 					return true;
 				}
 
-				__result = cache.Result!();
-				return false;
+				try
+				{
+					__result = cache.Result!();
+					return false;
+				}
+				catch (OverflowException)
+				{
+					throw;
+				}
+				catch (Exception ex)
+				{
+					throw new TargetInvocationException(ex);
+				}
 			}
+
+			[MethodImpl(MethodImplOptions.NoInlining)]
+			private static bool MarkUnsupported(RuntimeType type, ref ActivatorCacheValue cache)
+			{
+				cache.Result = _unsupportedActivatorSentinel;
+
+				lock (ActivatorCache.SyncLock)
+					ActivatorCache.GetDirectly.GetOrAddReference(type.TypeHandle).Result = _unsupportedActivatorSentinel;
+
+				return true;
+			}
+
+			[MethodImpl(MethodImplOptions.NoInlining)]
+			private static bool TryInvoke(ref object __result, Func<object> activator)
+			{
+				try
+				{
+					__result = activator();
+					return false;
+				}
+				catch (OverflowException)
+				{
+					throw;
+				}
+				catch (Exception ex)
+				{
+					throw new TargetInvocationException(ex);
+				}
+			}
+
+			[MethodImpl(MethodImplOptions.AggressiveInlining)]
+			private static bool CanUseFastPath(RuntimeType type)
+			{
+				if (type.HasElementType
+					|| type.ContainsGenericParameters
+					|| type.IsInterface
+					|| type.IsAbstract
+					|| type.IsCOMObject
+					|| type == typeof(void)
+					|| type == typeof(TypedReference)
+					|| type == typeof(ArgIterator)
+					|| type == typeof(RuntimeArgumentHandle))
+				{
+					return false;
+				}
+
+				return type.IsValueType
+					|| type.GetConstructor(BindingFlags.Instance | BindingFlags.Public, null, Type.EmptyTypes, null)
+					is not null;
+			}
+
+			private static readonly Func<object> _unsupportedActivatorSentinel
+				= static () => throw new InvalidOperationException("Unsupported activator sentinel");
 		}
 
 		// public sealed class CreateInstance_Type_Args : FishPatch
@@ -772,14 +884,34 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 		// 		= (Func<Type, object[], object>)Activator.CreateInstance;
 		// }
 
-		public record struct ActivatorCacheValue : IAsyncCacheable<RuntimeTypeHandle, Type, Func<object>>
+		public record struct ActivatorCacheValue : IAsyncCacheable<RuntimeTypeHandle, RuntimeType, Func<object>>
 		{
 			public Func<object>? Result { get; set; }
 			public Task<Func<object>>? Task { get; set; }
 			public bool Dirty => Result == null;
 
-			public ValueTask<Func<object>?> MakeResultAsync(RuntimeTypeHandle key, Type type)
-				=> new(Reflection.CreateConstructorDelegate<Func<object>>(type));
+			public ValueTask<Func<object>?> MakeResultAsync(RuntimeTypeHandle key, RuntimeType type)
+				=> new(MakeActivatorDelegate(type));
+
+			[MethodImpl(MethodImplOptions.NoInlining)]
+			private static Func<object>? MakeActivatorDelegate(RuntimeType type)
+			{
+				if (type.IsValueType)
+					return Reflection.CreateConstructorDelegate<Func<object>>(type);
+
+				var constructor = type.GetConstructor(BindingFlags.Instance | BindingFlags.Public, null,
+					Type.EmptyTypes, null);
+
+				if (constructor is null)
+					return null;
+
+				var dynamicMethod = new DynamicMethod($"Activator_{type.Name}", typeof(object), Type.EmptyTypes,
+					type, true);
+				var il = dynamicMethod.GetILGenerator();
+				il.Emit(FishTranspiler.New(constructor));
+				il.Emit(FishTranspiler.Return);
+				return (Func<object>)dynamicMethod.CreateDelegate(typeof(Func<object>));
+			}
 		}
 
 		// public record struct ActivatorWithArgumentsCacheValue : IAsyncCacheable<ActivatorWithArgumentsCache, Type,
@@ -869,6 +1001,8 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 	{
 		public sealed class GetValue_Patch : FishPatch
 		{
+			public override bool DefaultState => true;
+
 			public override string Description { get; }
 				= "Optimizes the GetValue method by invoking it through specialized cached delegates";
 
@@ -890,6 +1024,8 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			[MethodImpl(MethodImplOptions.AggressiveInlining)]
 			public static bool Prefix(FieldInfo __instance, object? obj, ref object? __result)
 			{
+				ValidateGetValueCall(__instance, obj);
+
 				ref var cache = ref FieldGetters.GetOrAddReference(__instance.FieldHandle);
 
 				if (cache.Dirty
@@ -902,10 +1038,36 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 				__result = cache.Result!(obj);
 				return false;
 			}
+
+			[MethodImpl(MethodImplOptions.NoInlining)]
+			private static void ValidateGetValueCall(FieldInfo info, object? obj)
+			{
+				if (!info.IsStatic)
+				{
+					if (obj is null)
+						throw new TargetException("Non-static field requires a target");
+
+					var declaringType = info.DeclaringType!;
+					if (!declaringType.IsAssignableFrom(obj.GetType()))
+					{
+						throw new ArgumentException(
+							$"Field {info.Name} defined on type {declaringType} is not a field on the target object which is of type {obj.GetType()}.",
+							nameof(obj));
+					}
+				}
+
+				if (!info.IsLiteral && info.DeclaringType!.ContainsGenericParameters)
+				{
+					throw new InvalidOperationException(
+						"Late bound operations cannot be performed on fields with types for which Type.ContainsGenericParameters is true.");
+				}
+			}
 		}
 
 		public sealed class SetValue_Patch : FishPatch
 		{
+			public override bool DefaultState => false;
+
 			public override string Description { get; }
 				= "Optimizes the SetValue method by invoking it through specialized cached delegates";
 
@@ -927,14 +1089,20 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 
 			[MethodImpl(MethodImplOptions.NoInlining)]
 			private static bool TryUpdate(FieldInfo __instance, ref FieldInfoSetterCache cache)
-				=> cache.Task != _fieldSetterFailureTask && __instance.IsConst()
-					? ErrorForInvalidCallAttempt(__instance, ref cache)
-					: FieldSetters.UpdateAsyncCache<FieldInfoSetterCache, FieldInfo, FieldSetter>(ref cache,
+			{
+				if (__instance.IsConst())
+					return ErrorForInvalidCallAttempt(__instance, ref cache);
+
+				return FieldSetters.UpdateAsyncCache<FieldInfoSetterCache, FieldInfo, FieldSetter>(ref cache,
 						__instance.FieldHandle, __instance);
+			}
 
 			[MethodImpl(MethodImplOptions.NoInlining)]
 			private static bool ErrorForInvalidCallAttempt(FieldInfo info, ref FieldInfoSetterCache cache)
 			{
+				if (cache.Task == _fieldSetterFailureTask)
+					return false;
+
 				cache.Task = _fieldSetterFailureTask;
 				Log.Error($"FieldInfo.SetValue has been called on '{
 					info.FullDescription()}'. This is a const that gets copied at compile time. An attempt at "
@@ -944,7 +1112,7 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			}
 		}
 
-		private static Task<FieldSetter> _fieldSetterFailureTask = new(static () => null!);
+		private static Task<FieldSetter> _fieldSetterFailureTask = new(static () => null!); // sentinel only
 
 		public static FieldGetter? MakeGetterDelegate(FieldInfo info)
 		{
@@ -1116,13 +1284,15 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 
 				if (methodInfo is null && constructorInfo is null)
 					return null;
-				
+
+				var parameters = methodBase.GetParameters();
+				if (!CanCacheInvoke(methodBase, methodInfo, constructorInfo, parameters))
+					return null;
+
 				var dm = new DynamicMethod($"MethodInvoker_{methodBase.Name}", typeof(object),
 					[typeof(object), typeof(object[])],
 					GetOwnerType(methodBase), true);
 				var il = dm.GetILGenerator();
-
-				var parameters = methodBase.GetParameters();
 
 				if (methodInfo != null && !methodBase.IsStatic)
 					EmitInstanceArgument(il, methodBase);
@@ -1157,6 +1327,49 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 				return null;
 			}
 		}
+
+		private static bool CanCacheInvoke(MethodBase methodBase, MethodInfo? methodInfo,
+			ConstructorInfo? constructorInfo, ParameterInfo[] parameters)
+		{
+			if (methodBase.ContainsGenericParameters
+				|| (methodBase.CallingConvention & CallingConventions.VarArgs) != 0)
+			{
+				return false;
+			}
+
+			if (methodInfo != null && !IsSupportedInvokeType(methodInfo.ReturnType))
+				return false;
+
+			if (constructorInfo?.DeclaringType is { } declaringType
+				&& !IsSupportedInvokeType(declaringType))
+			{
+				return false;
+			}
+
+			for (var i = 0; i < parameters.Length; i++)
+			{
+				if (!IsSupportedInvokeParameter(parameters[i].ParameterType))
+					return false;
+			}
+
+			return true;
+		}
+
+		private static bool IsSupportedInvokeParameter(Type parameterType)
+		{
+			// object[] stores nullable value arguments as boxed T or null, not boxed Nullable<T>, so the
+			// current byref fast path cannot safely hand out a Nullable<T>&.
+			if (parameterType.IsByRef && parameterType.GetElementType()!.IsNullable())
+				return false;
+
+			if (parameterType.IsByRef)
+				parameterType = parameterType.GetElementType()!;
+
+			return IsSupportedInvokeType(parameterType);
+		}
+
+		private static bool IsSupportedInvokeType(Type type)
+			=> !type.IsPointer && !type.ContainsGenericParameters;
 
 		private static void EmitInvokeMethodCall(MethodBase methodBase, ILGenerator il, MethodInfo methodInfo)
 		{
@@ -1252,7 +1465,7 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	[SecuritySafeCritical]
-	public static ref TTo CastRefSafely<TTo>(ref object? from)
+	public static ref TTo CastRefSafely<TTo>(ref object? from) where TTo : class?
 		=> ref from is TTo or null
 			? ref Unsafe.As<object?, TTo>(ref from)
 			: ref ThrowInvalidCastException<TTo>();
@@ -1264,7 +1477,7 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 			? ref Unsafe.Unbox<TTo>(from)
 			: ref Unsafe.Unbox<TTo>(from
 				= from is null
-					? default
+					? default(TTo)
 					: FisheryLib.Convert.Type<object, TTo>(from));
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1314,5 +1527,4 @@ public sealed class ReflectionCaching : ClassWithFishPatches
 		// populated with dynamic methods by MethodBasePatches.MakeInvokeDelegate, MakeGetterDelegate and
 		// MakeSetterDelegate
 	}
-#endif
 }

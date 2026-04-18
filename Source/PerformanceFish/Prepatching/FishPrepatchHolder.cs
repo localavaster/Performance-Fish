@@ -37,7 +37,9 @@ public class FishPrepatchHolder : IExposable, IEnumerable<FishPrepatchBase>
 
 	private void AddPatchesRecursively(Type type)
 	{
-		if (typeof(FishPrepatchBase).IsAssignableFrom(type) && !All.ContainsKey(type))
+		if (typeof(FishPrepatchBase).IsAssignableFrom(type)
+			&& !type.IsAbstract
+			&& !All.ContainsKey(type))
 		{
 			if (PerformanceFishMod.AllPrepatchClasses is { } allPatches)
 				RemoveDupes(allPatches, type);

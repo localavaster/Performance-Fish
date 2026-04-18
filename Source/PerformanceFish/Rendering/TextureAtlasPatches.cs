@@ -9,6 +9,8 @@ public sealed class TextureAtlasPatches : ClassWithFishPatches
 {
 	public sealed class StaticTextureAtlas_ApplyTextureCompression : FishPatch
 	{
+		public override bool DefaultState => false;
+
 		public override string? Description { get; }
 			= "Routes texture atlas compression through the GPU path when compute shaders are available, "
 			+ "regardless of the VRAM threshold check in UnityData.ComputeShadersSupported. Prevents native "

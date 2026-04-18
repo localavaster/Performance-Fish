@@ -59,7 +59,9 @@ public class FishPatchHolder : IExposable, IEnumerable<FishPatch>
 
 	private void AddPatchesRecursively(Type type)
 	{
-		if (typeof(FishPatch).IsAssignableFrom(type) && !All.ContainsKey(type))
+		if (typeof(FishPatch).IsAssignableFrom(type)
+			&& !type.IsAbstract
+			&& !All.ContainsKey(type))
 		{
 			if (PerformanceFishMod.AllPatchClasses is { } allPatches)
 				RemoveDupes(allPatches, type);
