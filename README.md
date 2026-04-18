@@ -1,3 +1,4 @@
+NOTE: SWAP TO THE rimworld-1.6 BRANCH BEFORE DOWNLOADING OTHERWISE IT WILL NOT WORK FOR 1.6!
 # Performance Fish
 ![](About/Preview.png?raw=true)  
   
